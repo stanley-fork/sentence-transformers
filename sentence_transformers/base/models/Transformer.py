@@ -1109,7 +1109,7 @@ class Transformer(InputModule):
         | PairStrInputs
         | DictInputs
         | ImageInputs
-        | ArrayInputs,  # TODO: Rename to inputs?
+        | ArrayInputs,
         prompt: str | None = None,
         modality: str | tuple[str, ...] | None = None,
         padding: str | bool = True,
