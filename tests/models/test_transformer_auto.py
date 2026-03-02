@@ -21,6 +21,10 @@ import pytest
 import torch
 from PIL import Image
 
+from sentence_transformers.base.models import Transformer
+from sentence_transformers.util.tensor import batch_to_device
+from tests.utils import is_ci
+
 try:
     from torchcodec.decoders import VideoDecoder
 except ImportError:
@@ -31,8 +35,11 @@ try:
 except ImportError:
     sf = None
 
-from sentence_transformers.base.models import Transformer
-from sentence_transformers.util.tensor import batch_to_device
+if is_ci():
+    pytest.skip(
+        "Skipping tests that load a considerable amount of models from the Hugging Face Hub in CI environment",
+        allow_module_level=True,
+    )
 
 # Curated list of tiny models from hf-internal-testing and tiny-random organizations
 # These are pre-built tiny models specifically designed for testing
