@@ -84,7 +84,7 @@ def update_tiny_model_mapping(tiny_model_mapping):
 
 
 if __name__ == "__main__":
-    json_file = Path(__file__).parent.parent / "models" / "transformers_tiny_models.json"
+    json_file = Path(__file__).parent.parent / "modules" / "transformers_tiny_models.json"
     with open(json_file, encoding="utf8") as f:
         tiny_model_mapping = json.load(f)
 
