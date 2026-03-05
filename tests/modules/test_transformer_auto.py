@@ -157,7 +157,7 @@ EXPECT_FORWARD_FAIL = {
         "image (path)",
     ],
     "paligemma": [  # Paligemma doesn't accept URL images if there's also a text
-        "text+image (text, url)"
+        "image+text (url, text)"
     ],
 }
 # If an architecture outputs sentence_embeddings directly, then they're likely using get_..._features,
@@ -171,6 +171,7 @@ EXPECT_MULTIMODAL_SUCCESS = [
 # We expect failure for multimodal here.
 EXPECT_MULTIMODAL_FAILURE = [
     "blip-2",  # Custom case that outputs text or image separately as token_embeddings
+    "sam3",  # Custom case that outputs text or image separately as token_embeddings
 ]
 
 # Some architectures fail when combining image+video in one input, but support image and video separately, so we can

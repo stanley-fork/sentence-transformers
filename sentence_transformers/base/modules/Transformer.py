@@ -46,6 +46,7 @@ from transformers.utils.peft_utils import find_adapter_config_file
 from sentence_transformers.backend import load_onnx_model, load_openvino_model
 from sentence_transformers.base.modules.InputModule import InputModule
 from sentence_transformers.base.modules.modality_utils import (
+    MODALITY_TO_PROCESSOR_ARG,
     ArrayInputs,
     DictInputs,
     ImageInputs,
@@ -113,7 +114,7 @@ TRANSFORMER_TASK_TO_AUTO_MODEL: dict[TransformerTask, Any] = {
 
 # Maps transformer tasks -> modalities -> methods -> model output fields -> module feature names
 # Structure: {task: {modality: {method_name: {model_output_field: module_feature_name}}}}
-# TODO: How about defaults? E.g. I want to support "image" for a model that traditionally only has ("text", "image")
+# TODO: How about defaults? E.g. I want to support "image" for a model that traditionally only has ("image", "text")
 # by defaulting to a "text" input like an empty string or just a "<image>" token?
 INFER_MODALITY_CONFIG: dict[
     TransformerTask, dict[Modality | Literal["multimodal"], dict[str, dict[str | None, str]]]
@@ -685,7 +686,8 @@ class Transformer(InputModule):
                         model = WhisperEncoder.from_pretrained(
                             model_name_or_path, config=config, cache_dir=cache_dir, **model_args
                         )
-                        # Transformers v5 uses ("text", "audio",) even for the encoder
+                        # Transformers v5 uses ("audio", "text",) even for the encoder
+                        # TODO: We don't need to override this if we're using the processor to determine modality
                         model.input_modalities = "audio"
                         return model
 
@@ -772,7 +774,7 @@ class Transformer(InputModule):
                             "pooler_output", model.get_image_features
                         ),
                     },
-                    ("text", "image"): {
+                    ("image", "text"): {
                         "method": "get_multimodal_features",
                         "method_output_name": self._infer_method_output_name(
                             "pooler_output", model.get_multimodal_features
@@ -796,30 +798,46 @@ class Transformer(InputModule):
                         ),
                     },
                 }, "token_embeddings"
+            case "sam3":
+                # Sam3 uses get_vision_features for images
+                return {
+                    "text": {
+                        "method": "get_text_features",
+                        "method_output_name": self._infer_method_output_name(
+                            "last_hidden_state", model.get_text_features
+                        ),
+                    },
+                    "image": {
+                        "method": "get_vision_features",
+                        "method_output_name": self._infer_method_output_name(
+                            "last_hidden_state", model.get_vision_features
+                        ),
+                    },
+                }, "token_embeddings"
             case "git" | "visual_bert":
                 # Custom case because text+image is supported without the messages format
                 # TODO: Should this be an automatic case?
                 return {
                     "text": {"method": "forward", "method_output_name": "last_hidden_state"},
                     # "image": {"method": "forward", "method_output_name": "last_hidden_state"},  # TODO: I think git always requires text?
-                    ("text", "image"): {"method": "forward", "method_output_name": "last_hidden_state"},
+                    ("image", "text"): {"method": "forward", "method_output_name": "last_hidden_state"},
                 }, "token_embeddings"
             case "kosmos-2" | "grounding-dino" | "paligemma" | "vilt":
                 # Custom case because text+image is supported without the messages format, and text nor image aren't supported
                 return {
-                    ("text", "image"): {"method": "forward", "method_output_name": "last_hidden_state"},
+                    ("image", "text"): {"method": "forward", "method_output_name": "last_hidden_state"},
                 }, "token_embeddings"
             case "layoutlmv3":
                 # Custom case because text+image is supported without the messages format, and image only is also supported
                 return {
                     "image": {"method": "forward", "method_output_name": "last_hidden_state"},
-                    ("text", "image"): {"method": "forward", "method_output_name": "last_hidden_state"},
+                    ("image", "text"): {"method": "forward", "method_output_name": "last_hidden_state"},
                 }, "token_embeddings"
             case "idefics":
                 return {
                     "text": {"method": "forward", "method_output_name": "last_hidden_state"},
                     "image": {"method": "forward", "method_output_name": "last_hidden_state"},
-                    ("text", "image"): {"method": "forward", "method_output_name": "last_hidden_state"},
+                    ("image", "text"): {"method": "forward", "method_output_name": "last_hidden_state"},
                 }, "token_embeddings"
             case (
                 "hubert"
@@ -836,8 +854,9 @@ class Transformer(InputModule):
                 # "whisper" is maybe only Audio? The decoder is only for the decoder
                 return {
                     "audio": {"method": "forward", "method_output_name": "last_hidden_state"},
-                    ("text", "audio"): {"method": "forward", "method_output_name": "last_hidden_state"},
+                    ("audio", "text"): {"method": "forward", "method_output_name": "last_hidden_state"},
                 }, "token_embeddings"
+                return
         return None
 
     def infer_modalities(
@@ -1167,11 +1186,11 @@ class Transformer(InputModule):
 
         # Always convert to the message format if it's supported, since it's most flexible with e.g. defaults
         if "message" in self.modality_config and modality != "message":
-            modality, processor_inputs = self.input_formatter.convert_to_message(modality, processor_inputs)
+            modality, processor_inputs = self.input_formatter.batch_to_messages(modality, processor_inputs)
         elif modality not in self.modality_config:
             raise ValueError(
                 f"Modality '{modality}' is not supported by this model. "
-                f"Supported modalities: {sorted(self.modality_config.keys())}"
+                f"Supported modalities: {sorted(self.modality_config.keys(), key=str)}"
             )
 
         # Incorporate prompt into inputs if applicable
@@ -1278,19 +1297,21 @@ class Transformer(InputModule):
 
         # Multi-modal processor: pass modality-specific kwargs
         if isinstance(self.processor, ProcessorMixin):
+            # Convert modality keys to processor argument names (e.g., "image" -> "images")
+            processor_inputs = {
+                MODALITY_TO_PROCESSOR_ARG.get(key, key): value for key, value in processor_inputs.items()
+            }
+
             # Some transformers processors are still outdated, and don't accept common_kwargs, etc.
             if self.config.model_type in {"clipseg", "whisper", "sam3"}:
-                kwargs = {}
-                if isinstance(modality, str):
-                    kwargs.update(modality_kwargs.get(modality, {}))
+                # Check against the only valid multimodal modality for these architectures
+                if modality == ("audio", "text"):
+                    # Audio must have priority for whisper, to correctly set padding to max_length
+                    kwargs = {**modality_kwargs["text"], **modality_kwargs["audio"]}
                 else:
-                    for mod in modality:
-                        kwargs.update(modality_kwargs.get(mod, {}))
+                    kwargs = modality_kwargs[modality]
                 return self.processor(**processor_inputs, **kwargs, **common_kwargs)
 
-            # NOTE: Older transformers versions mutate these kwargs, so we copy
-            modality_kwargs = modality_kwargs.copy()
-            common_kwargs = common_kwargs.copy()
             # This is the much cleaner transformers v5 approach
             return self.processor(
                 **processor_inputs,
