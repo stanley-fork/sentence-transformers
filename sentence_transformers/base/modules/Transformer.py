@@ -516,6 +516,358 @@ class Transformer(InputModule):
             return self.processor
         return getattr(self.processor, "tokenizer", None)
 
+    def preprocess(
+        self,
+        inputs: list[StrInputs | PairStrInputs | DictInputs | ImageInputs | ArrayInputs]
+        | StrInputs
+        | PairStrInputs
+        | DictInputs
+        | ImageInputs
+        | ArrayInputs,
+        prompt: str | None = None,
+        padding: str | bool = True,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """Preprocess inputs into model-ready features.
+
+        Args:
+            inputs: List of inputs (must be wrapped in a list). Can contain strings, dicts with
+                modality keys, PIL images, or numpy/torch arrays for audio/video.
+            prompt: Optional prompt to prepend to text inputs or inject as a system message.
+            padding: Padding strategy for the processor.
+
+        Returns:
+            Dictionary containing preprocessed tensors with a ``modality`` key indicating the
+            input type and optionally a ``prompt_length`` key for prompt-aware pooling.
+        """
+        common_kwargs = {"return_tensors": "pt"}
+        # TODO: We should likely set as little defaults and architecture-specific functionality as possible here,
+        # and also allow users to pass extra kwargs.
+        modality_kwargs = {
+            "text": {"padding": padding, "truncation": "longest_first"},
+            "audio": {"padding": padding},
+            "image": {},
+            "video": {},
+        }
+        if self.config.model_type == "whisper":
+            # Whisper requires inputs to be exactly 30 seconds long, while its WhisperFeatureExtractor defaults to
+            # padding=True (a.k.a. "longest"), instead of defaulting to the required "max_length".
+            modality_kwargs["audio"]["padding"] = "max_length"
+
+        prompt_length = None
+
+        modality, processor_inputs, extra_modality_kwargs = self.input_formatter.parse_inputs(inputs)
+
+        for modality_key, extra_kwargs in extra_modality_kwargs.items():
+            modality_kwargs[modality_key].update(extra_kwargs)
+
+        # Always convert to the message format if it's supported, since it's most flexible with e.g. defaults
+        if "message" in self.modality_config and modality != "message":
+            modality, processor_inputs = self.input_formatter.batch_to_messages(modality, processor_inputs)
+        elif modality not in self.modality_config:
+            raise ValueError(
+                f"Modality '{modality}' is not supported by this model. "
+                f"Supported modalities: {sorted(self.modality_config.keys(), key=str)}"
+            )
+
+        # Incorporate prompt into inputs if applicable
+        if prompt:
+            if modality == "message":
+                processor_inputs["message"] = self.input_formatter.prepend_prompt_to_messages(
+                    processor_inputs["message"], prompt
+                )
+                # Models relying on the message format don't support excluding prompt tokens in mean pooling,
+                # so we don't track prompt length.
+            elif modality == "text":
+                processor_inputs["text"] = self.input_formatter.prepend_prompt_to_texts(
+                    processor_inputs["text"], prompt
+                )
+                prompt_length = self._get_prompt_length(prompt, **kwargs)
+
+        processor_output = self._call_processor(modality, processor_inputs, modality_kwargs, common_kwargs)
+        processor_output["modality"] = modality
+        if prompt_length is not None:
+            processor_output["prompt_length"] = prompt_length
+
+        return processor_output
+
+    def forward(self, features: dict[str, Any], **kwargs) -> dict[str, Any]:
+        """Forward pass through the transformer model.
+
+        Dispatches to the appropriate model method based on the ``modality`` key in ``features``
+        and writes the result into ``features[self.module_output_name]``.
+
+        Args:
+            features: Input features dictionary produced by :meth:`preprocess`. Must contain the
+                keys expected by the underlying model (e.g. ``input_ids``, ``pixel_values``, etc.)
+                and a ``modality`` key indicating which modality config to use.
+            **kwargs: Additional keyword arguments forwarded to the model method (override features).
+
+        Returns:
+            The updated ``features`` dict with the model output stored under ``self.module_output_name``
+            (e.g. ``token_embeddings``, ``sentence_embedding``, ``scores``, or ``causal_logits``).
+            May also include ``all_layer_embeddings`` if ``output_hidden_states`` is enabled.
+        """
+
+        modality_name: Modality = features.get("modality", "text")
+        modality_params = self.modality_config[modality_name]
+        method_name = modality_params["method"]
+        method_output_name = modality_params["method_output_name"]
+        if isinstance(method_output_name, str):
+            method_output_name = (method_output_name,)
+
+        # kwargs override features
+        all_kwargs = {**features, **kwargs, "return_dict": True}
+        model_method = getattr(self.model, method_name, None)
+        if model_method is None:
+            raise ValueError(f"Model does not have the requested '{method_name}' method")
+
+        if method_name == "forward":
+            filtered_kwargs = {key: value for key, value in all_kwargs.items() if key in self.model_forward_params}
+        else:
+            method_params = self._method_signature_cache.get(method_name)
+            if method_params is None:
+                method_params = set(inspect.signature(model_method).parameters)
+                self._method_signature_cache[method_name] = method_params
+            filtered_kwargs = {key: value for key, value in all_kwargs.items() if key in method_params}
+
+        model_output = model_method(**filtered_kwargs)
+
+        embedding = model_output
+        if method_output_name is not None:
+            for output_key in method_output_name:
+                try:
+                    embedding = embedding[output_key]
+                except (KeyError, TypeError):
+                    # Some models (e.g. chinese_clip) only expose output fields via attribute access,
+                    # not dictionary-style indexing. See https://github.com/huggingface/transformers/issues/44079
+                    embedding = getattr(embedding, output_key)
+
+        if embedding.ndim == 4:
+            # Some image models return (batch_size, num_channels, height, width) instead of (batch_size, seq_len, hidden_size)
+            # We flatten the height and width dimensions and transpose to get (batch_size, height*width, num_channels)
+            # which a subsequent Pooling layer can handle to remove the height*width dimension
+            embedding = embedding.flatten(2).transpose(1, 2)
+
+        features[self.module_output_name] = embedding
+
+        # If the AutoModel is wrapped with a PeftModel(ForFeatureExtraction), then it may have added virtual tokens
+        # We need to extend the attention mask to include these virtual tokens, or the pooling will fail
+        if "input_ids" in features and "attention_mask" in features and is_peft_available():
+            from peft import PeftModel
+
+            if isinstance(self.model, PeftModel) and self.model.active_peft_config.is_prompt_learning:
+                batch_size = features["input_ids"].shape[0]
+                attention_mask = features["attention_mask"]
+                prefix_attention_mask = torch.ones(
+                    batch_size, self.model.active_peft_config.num_virtual_tokens, device=attention_mask.device
+                )
+                features["attention_mask"] = torch.cat((prefix_attention_mask, attention_mask), dim=1)
+
+        if (
+            hasattr(self.model.config, "output_hidden_states")
+            and self.model.config.output_hidden_states
+            and "hidden_states" in model_output
+        ):
+            features["all_layer_embeddings"] = model_output["hidden_states"]
+
+        return features
+
+    def get_word_embedding_dimension(self) -> int:
+        """Get the output embedding dimension from the transformer model.
+
+        Returns:
+            int: The hidden dimension size of the model's embeddings.
+
+        Raises:
+            ValueError: If the embedding dimension cannot be determined from the model config.
+        """
+        # Edge case for timm models
+        if isinstance(self.model.config, TimmWrapperConfig):
+            return self.model.config.num_features
+
+        def get_hidden_size_from_config(config):
+            # If we're directly outputting sentence embeddings from the transformer (e.g., using the pooler output),
+            # then we should check for projection_dim first, as that's likely the dimension of the sentence embeddings
+            # after a projection layer
+            if hasattr(config, "projection_dim") and self.module_output_name == "sentence_embedding":
+                return config.projection_dim
+
+            if hasattr(config, "hidden_size"):
+                return config.hidden_size
+            for attr_name in ("neck_hidden_sizes", "hidden_sizes", "embed_dims"):
+                if hasattr(config, attr_name):
+                    value = getattr(config, attr_name)
+                    if isinstance(value, list):
+                        if value:
+                            return value[-1]
+                    else:
+                        return value
+            if hasattr(config, "hidden_dim"):
+                return config.hidden_dim
+            return None
+
+        if (hidden_size := get_hidden_size_from_config(self.model.config)) is not None:
+            return hidden_size
+
+        # Text config hidden size has priority
+        if hasattr(self.model.config, "text_config"):
+            if (hidden_size := get_hidden_size_from_config(self.model.config.text_config)) is not None:
+                return hidden_size
+
+        # Afterwards we check all sub-configs
+        if hasattr(self.model.config, "sub_configs"):
+            for sub_config_name in self.model.config.sub_configs.keys():
+                sub_config = getattr(self.model.config, sub_config_name)
+                if (hidden_size := get_hidden_size_from_config(sub_config)) is not None:
+                    return hidden_size
+
+        raise ValueError(
+            f"Could not determine embedding dimension from model config. Config type: {type(self.model.config).__name__}. "
+        )
+
+    def _call_processor(
+        self,
+        modality: Modality,
+        processor_inputs: dict[str, list],
+        modality_kwargs: dict[str, dict],
+        common_kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Call the appropriate processor with the correct arguments.
+
+        Args:
+            modality: The modality or tuple of modalities being processed
+            processor_inputs: Dictionary of processor argument names to lists of values
+            modality_kwargs: Configuration kwargs for each modality type
+            common_kwargs: Common kwargs to pass to all processor calls
+
+        Returns:
+            Processor output dictionary
+        """
+        if modality == "message":
+            return self._process_chat_messages(processor_inputs["message"], modality_kwargs, common_kwargs)
+
+        # Multi-modal processor: pass modality-specific kwargs
+        if isinstance(self.processor, ProcessorMixin):
+            # Convert modality keys to processor argument names (e.g., "image" -> "images")
+            processor_inputs = {
+                MODALITY_TO_PROCESSOR_ARG.get(key, key): value for key, value in processor_inputs.items()
+            }
+
+            # Some transformers processors are still outdated, and don't accept common_kwargs, etc.
+            if self.config.model_type in {"clipseg", "whisper", "sam3"}:
+                # Check against the only valid multimodal modality for these architectures
+                if modality == ("audio", "text"):
+                    # Audio must have priority for whisper, to correctly set padding to max_length
+                    kwargs = {**modality_kwargs["text"], **modality_kwargs["audio"]}
+                else:
+                    kwargs = modality_kwargs[modality]
+                return self.processor(**processor_inputs, **kwargs, **common_kwargs)
+
+            # This is the much cleaner transformers v5 approach
+            return self.processor(
+                **processor_inputs,
+                text_kwargs=modality_kwargs["text"],
+                images_kwargs=modality_kwargs["image"],
+                audio_kwargs=modality_kwargs["audio"],
+                videos_kwargs=modality_kwargs["video"],
+                common_kwargs=common_kwargs,
+            )
+
+        # Single-modality processor: determine type and call appropriately
+        # Check in order: text, audio, video, image (video before image due to inheritance)
+        processor_type_checks = [
+            ("text", PreTrainedTokenizerBase, modality_kwargs["text"]),
+            ("audio", FeatureExtractionMixin, modality_kwargs["audio"]),
+            ("video", BaseVideoProcessor, modality_kwargs["video"]),
+            ("image", ImageProcessingMixin, modality_kwargs["image"]),
+        ]
+
+        for modality_type, processor_class, type_kwargs in processor_type_checks:
+            if not isinstance(self.processor, processor_class):
+                continue
+
+            call_kwargs = {**type_kwargs, **common_kwargs}
+
+            # Tokenizers and feature extractors expect the primary input as the first positional arg
+            if modality_type in processor_inputs:
+                primary_input = processor_inputs.pop(modality_type)
+                return self.processor(primary_input, **processor_inputs, **call_kwargs)
+            return self.processor(**processor_inputs, **call_kwargs)
+
+        raise RuntimeError(
+            f"Could not determine how to call processor of type {type(self.processor).__name__} "
+            f"for modality '{modality}'"
+        )
+
+    def _process_chat_messages(
+        self,
+        messages: list[list[DictInputs]],
+        modality_kwargs: dict[str, dict[str, Any]],
+        common_kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Process chat messages using the processor's chat template."""
+        if "message" not in self.modality_config:
+            raise ValueError(
+                f"The model does not support 'message' modality, but the input looks like a chat message. "
+                f"Supported modalities: {list(self.modality_config.keys())}"
+            )
+
+        # Ideally we'd use the same code path for both ProcessorMixin and Tokenizers, but the latter expects
+        # the text kwargs to be passed at the top level instead of in a nested "text_kwargs" dict.
+        if isinstance(self.processor, ProcessorMixin):
+            return self.processor.apply_chat_template(
+                messages,
+                tokenize=True,
+                return_dict=True,
+                text_kwargs=modality_kwargs["text"],
+                images_kwargs=modality_kwargs["image"],
+                audio_kwargs=modality_kwargs["audio"],
+                videos_kwargs=modality_kwargs["video"],
+                common_kwargs=common_kwargs,
+                # TODO: Qwen3-VL-Embedding needs add_generation_prompt=True; find a model-agnostic way to set this
+            )
+
+        # apply_chat_template expects padding/truncation/max_length/return_tensors as top-level kwargs,
+        # not nested inside tokenizer_kwargs or common_kwargs, so we hoist them out.
+        top_level_kwarg_names = {"padding", "truncation", "max_length", "return_tensors"}
+        top_level_kwargs = {key: common_kwargs.pop(key) for key in top_level_kwarg_names & common_kwargs.keys()}
+        top_level_kwargs |= {
+            key: modality_kwargs["text"].pop(key) for key in top_level_kwarg_names & modality_kwargs["text"].keys()
+        }
+
+        return self.processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            return_dict=True,
+            tokenizer_kwargs=modality_kwargs["text"],
+            common_kwargs=common_kwargs,
+            **top_level_kwargs,
+            # TODO: Qwen3-VL-Embedding needs add_generation_prompt=True; find a model-agnostic way to set this
+        )
+
+    def _get_prompt_length(self, prompt: str, **kwargs) -> int | None:
+        """Return the length of the prompt in tokens, excluding any trailing special token.
+
+        Returns None if the processor does not produce ``input_ids``.
+        """
+        cache_key = (prompt, *sorted(kwargs.items()))
+        if cache_key in self._prompt_length_mapping:
+            return self._prompt_length_mapping[cache_key]
+
+        tokenized_prompt = self.preprocess([prompt], **kwargs)
+        if "input_ids" not in tokenized_prompt:
+            self._prompt_length_mapping[cache_key] = None
+            return None
+        prompt_length = tokenized_prompt["input_ids"].shape[-1]
+        # If the tokenizer adds a trailing special token (EOS, SEP, etc.), exclude it from the prompt length
+        tokenizer = self.tokenizer
+        last_token = tokenized_prompt["input_ids"][..., -1].item()
+        if tokenizer is not None and hasattr(tokenizer, "all_special_ids") and last_token in tokenizer.all_special_ids:
+            prompt_length -= 1
+        self._prompt_length_mapping[cache_key] = prompt_length
+        return prompt_length
+
     def _load_config(
         self, model_name_or_path: str, cache_dir: str | None, backend: str, config_kwargs: dict[str, Any]
     ) -> tuple[PeftConfig | PretrainedConfig, bool]:
@@ -666,72 +1018,6 @@ class Transformer(InputModule):
 
         return None
 
-    @staticmethod
-    def _get_method_output_fields(method: Callable) -> list[str] | None:
-        """Extract the output field names from a method's return type annotation.
-
-        Args:
-            method (Callable): The method to inspect.
-
-        Returns:
-            list[str] | None: List of output field names, or None if not found.
-        """
-
-        def find_model_output_class(type_annotation):
-            if isinstance(type_annotation, type) and issubclass(type_annotation, ModelOutput):
-                return type_annotation
-            for sub_annotation in get_args(type_annotation):
-                if (result := find_model_output_class(sub_annotation)) is not None:
-                    return result
-            return None
-
-        try:
-            return_annotation = get_type_hints(method).get("return", None)
-        except Exception:
-            return None
-        output_class = find_model_output_class(return_annotation)
-        if output_class is None:
-            return None
-        return [field.name for field in fields(output_class)]
-
-    @staticmethod
-    def _infer_method_output_name(method_output_name: str, method: Callable) -> str | None:
-        """Validate that ``method_output_name`` is present in the method's return type annotation.
-
-        Returns the name if found, or ``None`` if the method's output type does not include it.
-        Primarily needed for transformers v4 compatibility: v5 often allows ``pooler_output``
-        from ``get_..._features`` methods, but v4 didn't use ``BaseModelOutputWithPooling`` yet.
-        """
-        output_fields = Transformer._get_method_output_fields(method) or []
-        if method_output_name in output_fields:
-            return method_output_name
-        return None
-
-    def infer_modalities_edge_cases(self, model: PreTrainedModel, processor) -> tuple[ModalityConfig, str] | None:
-        """Return a ``(modality_config, module_output_name)`` for model types that cannot be handled
-        by the general :meth:`infer_modalities` inference path, or ``None`` to fall through.
-
-        Looks up the model type in :data:`_EDGE_CASE_MODALITY_CONFIGS`. For entries that require
-        output name validation (transformers v4/v5 compat), resolves each modality's
-        ``method_output_name`` against the actual model method via :meth:`_infer_method_output_name`.
-        """
-        entry = _EDGE_CASE_MODALITY_CONFIGS.get(model.config.model_type)
-        if entry is None:
-            return None
-
-        raw_config, module_output_name, validate_output_names = entry
-        if not validate_output_names:
-            return raw_config, module_output_name
-
-        modality_config: ModalityConfig = {}
-        for modality, params in raw_config.items():
-            method = getattr(model, params["method"])
-            modality_config[modality] = {
-                "method": params["method"],
-                "method_output_name": self._infer_method_output_name(params["method_output_name"], method),
-            }
-        return modality_config, module_output_name
-
     def infer_modalities(
         self,
         model: PreTrainedModel,
@@ -800,6 +1086,31 @@ class Transformer(InputModule):
             for modality in modalities
         }, default_module_output_name
 
+    def infer_modalities_edge_cases(self, model: PreTrainedModel, processor) -> tuple[ModalityConfig, str] | None:
+        """Return a ``(modality_config, module_output_name)`` for model types that cannot be handled
+        by the general :meth:`infer_modalities` inference path, or ``None`` to fall through.
+
+        Looks up the model type in :data:`_EDGE_CASE_MODALITY_CONFIGS`. For entries that require
+        output name validation (transformers v4/v5 compat), resolves each modality's
+        ``method_output_name`` against the actual model method via :meth:`_infer_method_output_name`.
+        """
+        entry = _EDGE_CASE_MODALITY_CONFIGS.get(model.config.model_type)
+        if entry is None:
+            return None
+
+        raw_config, module_output_name, validate_output_names = entry
+        if not validate_output_names:
+            return raw_config, module_output_name
+
+        modality_config: ModalityConfig = {}
+        for modality, params in raw_config.items():
+            method = getattr(model, params["method"])
+            modality_config[modality] = {
+                "method": params["method"],
+                "method_output_name": self._infer_method_output_name(params["method_output_name"], method),
+            }
+        return modality_config, module_output_name
+
     def infer_modalities_from_processor(self, model: PreTrainedModel, processor) -> list[Modality]:
         """Determine which modalities the processor supports by inspecting its attributes or type."""
         processor_attribute_mapping: dict[str, Modality] = {
@@ -842,360 +1153,46 @@ class Transformer(InputModule):
             return self.processor.attributes
         return None
 
-    def __repr__(self) -> str:
-        return f"Transformer({dict(self.get_config_dict(), architecture=self.model.__class__.__name__)})"
-
-    def forward(self, features: dict[str, Any], **kwargs) -> dict[str, Any]:
-        """Forward pass through the transformer model.
-
-        Dispatches to the appropriate model method based on the ``modality`` key in ``features``
-        and writes the result into ``features[self.module_output_name]``.
+    @staticmethod
+    def _get_method_output_fields(method: Callable) -> list[str] | None:
+        """Extract the output field names from a method's return type annotation.
 
         Args:
-            features: Input features dictionary produced by :meth:`preprocess`. Must contain the
-                keys expected by the underlying model (e.g. ``input_ids``, ``pixel_values``, etc.)
-                and a ``modality`` key indicating which modality config to use.
-            **kwargs: Additional keyword arguments forwarded to the model method (override features).
+            method (Callable): The method to inspect.
 
         Returns:
-            The updated ``features`` dict with the model output stored under ``self.module_output_name``
-            (e.g. ``token_embeddings``, ``sentence_embedding``, ``scores``, or ``causal_logits``).
-            May also include ``all_layer_embeddings`` if ``output_hidden_states`` is enabled.
+            list[str] | None: List of output field names, or None if not found.
         """
 
-        modality_name: Modality = features.get("modality", "text")
-        modality_params = self.modality_config[modality_name]
-        method_name = modality_params["method"]
-        method_output_name = modality_params["method_output_name"]
-        if isinstance(method_output_name, str):
-            method_output_name = (method_output_name,)
-
-        # kwargs override features
-        all_kwargs = {**features, **kwargs, "return_dict": True}
-        model_method = getattr(self.model, method_name, None)
-        if model_method is None:
-            raise ValueError(f"Model does not have the requested '{method_name}' method")
-
-        if method_name == "forward":
-            filtered_kwargs = {key: value for key, value in all_kwargs.items() if key in self.model_forward_params}
-        else:
-            method_params = self._method_signature_cache.get(method_name)
-            if method_params is None:
-                method_params = set(inspect.signature(model_method).parameters)
-                self._method_signature_cache[method_name] = method_params
-            filtered_kwargs = {key: value for key, value in all_kwargs.items() if key in method_params}
-
-        model_output = model_method(**filtered_kwargs)
-
-        embedding = model_output
-        if method_output_name is not None:
-            for output_key in method_output_name:
-                try:
-                    embedding = embedding[output_key]
-                except (KeyError, TypeError):
-                    # Some models (e.g. chinese_clip) only expose output fields via attribute access,
-                    # not dictionary-style indexing. See https://github.com/huggingface/transformers/issues/44079
-                    embedding = getattr(embedding, output_key)
-
-        if embedding.ndim == 4:
-            # Some image models return (batch_size, num_channels, height, width) instead of (batch_size, seq_len, hidden_size)
-            # We flatten the height and width dimensions and transpose to get (batch_size, height*width, num_channels)
-            # which a subsequent Pooling layer can handle to remove the height*width dimension
-            embedding = embedding.flatten(2).transpose(1, 2)
-
-        features[self.module_output_name] = embedding
-
-        # If the AutoModel is wrapped with a PeftModel(ForFeatureExtraction), then it may have added virtual tokens
-        # We need to extend the attention mask to include these virtual tokens, or the pooling will fail
-        if "input_ids" in features and "attention_mask" in features and is_peft_available():
-            from peft import PeftModel
-
-            if isinstance(self.model, PeftModel) and self.model.active_peft_config.is_prompt_learning:
-                batch_size = features["input_ids"].shape[0]
-                attention_mask = features["attention_mask"]
-                prefix_attention_mask = torch.ones(
-                    batch_size, self.model.active_peft_config.num_virtual_tokens, device=attention_mask.device
-                )
-                features["attention_mask"] = torch.cat((prefix_attention_mask, attention_mask), dim=1)
-
-        if (
-            hasattr(self.model.config, "output_hidden_states")
-            and self.model.config.output_hidden_states
-            and "hidden_states" in model_output
-        ):
-            features["all_layer_embeddings"] = model_output["hidden_states"]
-
-        return features
-
-    def get_word_embedding_dimension(self) -> int:
-        """Get the output embedding dimension from the transformer model.
-
-        Returns:
-            int: The hidden dimension size of the model's embeddings.
-
-        Raises:
-            ValueError: If the embedding dimension cannot be determined from the model config.
-        """
-        # Edge case for timm models
-        if isinstance(self.model.config, TimmWrapperConfig):
-            return self.model.config.num_features
-
-        def get_hidden_size_from_config(config):
-            # If we're directly outputting sentence embeddings from the transformer (e.g., using the pooler output),
-            # then we should check for projection_dim first, as that's likely the dimension of the sentence embeddings
-            # after a projection layer
-            if hasattr(config, "projection_dim") and self.module_output_name == "sentence_embedding":
-                return config.projection_dim
-
-            if hasattr(config, "hidden_size"):
-                return config.hidden_size
-            for attr_name in ("neck_hidden_sizes", "hidden_sizes", "embed_dims"):
-                if hasattr(config, attr_name):
-                    value = getattr(config, attr_name)
-                    if isinstance(value, list):
-                        if value:
-                            return value[-1]
-                    else:
-                        return value
-            if hasattr(config, "hidden_dim"):
-                return config.hidden_dim
+        def find_model_output_class(type_annotation):
+            if isinstance(type_annotation, type) and issubclass(type_annotation, ModelOutput):
+                return type_annotation
+            for sub_annotation in get_args(type_annotation):
+                if (result := find_model_output_class(sub_annotation)) is not None:
+                    return result
             return None
 
-        if (hidden_size := get_hidden_size_from_config(self.model.config)) is not None:
-            return hidden_size
-
-        # Text config hidden size has priority
-        if hasattr(self.model.config, "text_config"):
-            if (hidden_size := get_hidden_size_from_config(self.model.config.text_config)) is not None:
-                return hidden_size
-
-        # Afterwards we check all sub-configs
-        if hasattr(self.model.config, "sub_configs"):
-            for sub_config_name in self.model.config.sub_configs.keys():
-                sub_config = getattr(self.model.config, sub_config_name)
-                if (hidden_size := get_hidden_size_from_config(sub_config)) is not None:
-                    return hidden_size
-
-        raise ValueError(
-            f"Could not determine embedding dimension from model config. Config type: {type(self.model.config).__name__}. "
-        )
-
-    def preprocess(
-        self,
-        inputs: list[StrInputs | PairStrInputs | DictInputs | ImageInputs | ArrayInputs]
-        | StrInputs
-        | PairStrInputs
-        | DictInputs
-        | ImageInputs
-        | ArrayInputs,
-        prompt: str | None = None,
-        padding: str | bool = True,
-        **kwargs,
-    ) -> dict[str, Any]:
-        """Preprocess inputs into model-ready features.
-
-        Args:
-            inputs: List of inputs (must be wrapped in a list). Can contain strings, dicts with
-                modality keys, PIL images, or numpy/torch arrays for audio/video.
-            prompt: Optional prompt to prepend to text inputs or inject as a system message.
-            padding: Padding strategy for the processor.
-
-        Returns:
-            Dictionary containing preprocessed tensors with a ``modality`` key indicating the
-            input type and optionally a ``prompt_length`` key for prompt-aware pooling.
-        """
-        common_kwargs = {"return_tensors": "pt"}
-        # TODO: We should likely set as little defaults and architecture-specific functionality as possible here,
-        # and also allow users to pass extra kwargs.
-        modality_kwargs = {
-            "text": {"padding": padding, "truncation": "longest_first"},
-            "audio": {"padding": padding},
-            "image": {},
-            "video": {},
-        }
-        if self.config.model_type == "whisper":
-            # Whisper requires inputs to be exactly 30 seconds long, while its WhisperFeatureExtractor defaults to
-            # padding=True (a.k.a. "longest"), instead of defaulting to the required "max_length".
-            modality_kwargs["audio"]["padding"] = "max_length"
-
-        prompt_length = None
-
-        modality, processor_inputs, extra_modality_kwargs = self.input_formatter.parse_inputs(inputs)
-
-        for modality_key, extra_kwargs in extra_modality_kwargs.items():
-            modality_kwargs[modality_key].update(extra_kwargs)
-
-        # Always convert to the message format if it's supported, since it's most flexible with e.g. defaults
-        if "message" in self.modality_config and modality != "message":
-            modality, processor_inputs = self.input_formatter.batch_to_messages(modality, processor_inputs)
-        elif modality not in self.modality_config:
-            raise ValueError(
-                f"Modality '{modality}' is not supported by this model. "
-                f"Supported modalities: {sorted(self.modality_config.keys(), key=str)}"
-            )
-
-        # Incorporate prompt into inputs if applicable
-        if prompt:
-            if modality == "message":
-                processor_inputs["message"] = self.input_formatter.prepend_prompt_to_messages(
-                    processor_inputs["message"], prompt
-                )
-                # Models relying on the message format don't support excluding prompt tokens in mean pooling,
-                # so we don't track prompt length.
-            elif modality == "text":
-                processor_inputs["text"] = self.input_formatter.prepend_prompt_to_texts(
-                    processor_inputs["text"], prompt
-                )
-                prompt_length = self._get_prompt_length(prompt, **kwargs)
-
-        processor_output = self._call_processor(modality, processor_inputs, modality_kwargs, common_kwargs)
-        processor_output["modality"] = modality
-        if prompt_length is not None:
-            processor_output["prompt_length"] = prompt_length
-
-        return processor_output
-
-    def _get_prompt_length(self, prompt: str, **kwargs) -> int | None:
-        """Return the length of the prompt in tokens, excluding any trailing special token.
-
-        Returns None if the processor does not produce ``input_ids``.
-        """
-        cache_key = (prompt, *sorted(kwargs.items()))
-        if cache_key in self._prompt_length_mapping:
-            return self._prompt_length_mapping[cache_key]
-
-        tokenized_prompt = self.preprocess([prompt], **kwargs)
-        if "input_ids" not in tokenized_prompt:
-            self._prompt_length_mapping[cache_key] = None
+        try:
+            return_annotation = get_type_hints(method).get("return", None)
+        except Exception:
             return None
-        prompt_length = tokenized_prompt["input_ids"].shape[-1]
-        # If the tokenizer adds a trailing special token (EOS, SEP, etc.), exclude it from the prompt length
-        tokenizer = self.tokenizer
-        last_token = tokenized_prompt["input_ids"][..., -1].item()
-        if tokenizer is not None and hasattr(tokenizer, "all_special_ids") and last_token in tokenizer.all_special_ids:
-            prompt_length -= 1
-        self._prompt_length_mapping[cache_key] = prompt_length
-        return prompt_length
+        output_class = find_model_output_class(return_annotation)
+        if output_class is None:
+            return None
+        return [field.name for field in fields(output_class)]
 
-    def _process_chat_messages(
-        self,
-        messages: list[list[DictInputs]],
-        modality_kwargs: dict[str, dict[str, Any]],
-        common_kwargs: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Process chat messages using the processor's chat template."""
-        if "message" not in self.modality_config:
-            raise ValueError(
-                f"The model does not support 'message' modality, but the input looks like a chat message. "
-                f"Supported modalities: {list(self.modality_config.keys())}"
-            )
+    @staticmethod
+    def _infer_method_output_name(method_output_name: str, method: Callable) -> str | None:
+        """Validate that ``method_output_name`` is present in the method's return type annotation.
 
-        # Ideally we'd use the same code path for both ProcessorMixin and Tokenizers, but the latter expects
-        # the text kwargs to be passed at the top level instead of in a nested "text_kwargs" dict.
-        if isinstance(self.processor, ProcessorMixin):
-            return self.processor.apply_chat_template(
-                messages,
-                tokenize=True,
-                return_dict=True,
-                text_kwargs=modality_kwargs["text"],
-                images_kwargs=modality_kwargs["image"],
-                audio_kwargs=modality_kwargs["audio"],
-                videos_kwargs=modality_kwargs["video"],
-                common_kwargs=common_kwargs,
-                # TODO: Qwen3-VL-Embedding needs add_generation_prompt=True; find a model-agnostic way to set this
-            )
-
-        # apply_chat_template expects padding/truncation/max_length/return_tensors as top-level kwargs,
-        # not nested inside tokenizer_kwargs or common_kwargs, so we hoist them out.
-        top_level_kwarg_names = {"padding", "truncation", "max_length", "return_tensors"}
-        top_level_kwargs = {key: common_kwargs.pop(key) for key in top_level_kwarg_names & common_kwargs.keys()}
-        top_level_kwargs |= {
-            key: modality_kwargs["text"].pop(key) for key in top_level_kwarg_names & modality_kwargs["text"].keys()
-        }
-
-        return self.processor.apply_chat_template(
-            messages,
-            tokenize=True,
-            return_dict=True,
-            tokenizer_kwargs=modality_kwargs["text"],
-            common_kwargs=common_kwargs,
-            **top_level_kwargs,
-            # TODO: Qwen3-VL-Embedding needs add_generation_prompt=True; find a model-agnostic way to set this
-        )
-
-    def _call_processor(
-        self,
-        modality: Modality,
-        processor_inputs: dict[str, list],
-        modality_kwargs: dict[str, dict],
-        common_kwargs: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Call the appropriate processor with the correct arguments.
-
-        Args:
-            modality: The modality or tuple of modalities being processed
-            processor_inputs: Dictionary of processor argument names to lists of values
-            modality_kwargs: Configuration kwargs for each modality type
-            common_kwargs: Common kwargs to pass to all processor calls
-
-        Returns:
-            Processor output dictionary
+        Returns the name if found, or ``None`` if the method's output type does not include it.
+        Primarily needed for transformers v4 compatibility: v5 often allows ``pooler_output``
+        from ``get_..._features`` methods, but v4 didn't use ``BaseModelOutputWithPooling`` yet.
         """
-        if modality == "message":
-            return self._process_chat_messages(processor_inputs["message"], modality_kwargs, common_kwargs)
-
-        # Multi-modal processor: pass modality-specific kwargs
-        if isinstance(self.processor, ProcessorMixin):
-            # Convert modality keys to processor argument names (e.g., "image" -> "images")
-            processor_inputs = {
-                MODALITY_TO_PROCESSOR_ARG.get(key, key): value for key, value in processor_inputs.items()
-            }
-
-            # Some transformers processors are still outdated, and don't accept common_kwargs, etc.
-            if self.config.model_type in {"clipseg", "whisper", "sam3"}:
-                # Check against the only valid multimodal modality for these architectures
-                if modality == ("audio", "text"):
-                    # Audio must have priority for whisper, to correctly set padding to max_length
-                    kwargs = {**modality_kwargs["text"], **modality_kwargs["audio"]}
-                else:
-                    kwargs = modality_kwargs[modality]
-                return self.processor(**processor_inputs, **kwargs, **common_kwargs)
-
-            # This is the much cleaner transformers v5 approach
-            return self.processor(
-                **processor_inputs,
-                text_kwargs=modality_kwargs["text"],
-                images_kwargs=modality_kwargs["image"],
-                audio_kwargs=modality_kwargs["audio"],
-                videos_kwargs=modality_kwargs["video"],
-                common_kwargs=common_kwargs,
-            )
-
-        # Single-modality processor: determine type and call appropriately
-        # Check in order: text, audio, video, image (video before image due to inheritance)
-        processor_type_checks = [
-            ("text", PreTrainedTokenizerBase, modality_kwargs["text"]),
-            ("audio", FeatureExtractionMixin, modality_kwargs["audio"]),
-            ("video", BaseVideoProcessor, modality_kwargs["video"]),
-            ("image", ImageProcessingMixin, modality_kwargs["image"]),
-        ]
-
-        for modality_type, processor_class, type_kwargs in processor_type_checks:
-            if not isinstance(self.processor, processor_class):
-                continue
-
-            call_kwargs = {**type_kwargs, **common_kwargs}
-
-            # Tokenizers and feature extractors expect the primary input as the first positional arg
-            if modality_type in processor_inputs:
-                primary_input = processor_inputs.pop(modality_type)
-                return self.processor(primary_input, **processor_inputs, **call_kwargs)
-            return self.processor(**processor_inputs, **call_kwargs)
-
-        raise RuntimeError(
-            f"Could not determine how to call processor of type {type(self.processor).__name__} "
-            f"for modality '{modality}'"
-        )
+        output_fields = Transformer._get_method_output_fields(method) or []
+        if method_output_name in output_fields:
+            return method_output_name
+        return None
 
     def save(self, output_path: str, *args, safe_serialization: bool = True, **kwargs) -> None:
         self.model.save_pretrained(output_path, safe_serialization=safe_serialization)
@@ -1390,3 +1387,6 @@ class Transformer(InputModule):
             serialize_tuple_keys(modality): params for modality, params in self.modality_config.items()
         }
         return config_dict
+
+    def __repr__(self) -> str:
+        return f"Transformer({dict(self.get_config_dict(), architecture=self.model.__class__.__name__)})"
