@@ -513,10 +513,10 @@ def test_load_with_model_kwargs(monkeypatch: pytest.MonkeyPatch) -> None:
         model_kwargs={"attn_implementation": "eager", "low_cpu_mem_usage": False},
     )
 
-    assert "low_cpu_mem_usage" in transformer_kwargs["model_args"]
-    assert transformer_kwargs["model_args"]["low_cpu_mem_usage"] is False
-    assert "attn_implementation" in transformer_kwargs["model_args"]
-    assert transformer_kwargs["model_args"]["attn_implementation"] == "eager"
+    assert "low_cpu_mem_usage" in transformer_kwargs["model_kwargs"]
+    assert transformer_kwargs["model_kwargs"]["low_cpu_mem_usage"] is False
+    assert "attn_implementation" in transformer_kwargs["model_kwargs"]
+    assert transformer_kwargs["model_kwargs"]["attn_implementation"] == "eager"
 
 
 @pytest.mark.skip("Currently failing on transformers v5.0.0.rc")

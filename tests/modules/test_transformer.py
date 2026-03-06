@@ -742,7 +742,7 @@ class TestGetDefaultModalityConfig:
 
 class TestLoadInitKwargs:
     def test_merges_config_and_overrides(self, bert_tiny_transformer, tmp_path):
-        """_load_init_kwargs should merge config, hub_kwargs, user overrides, and map cache_folder."""
+        """_load_init_kwargs should merge config, hub_kwargs, user overrides, and pass cache_dir for the decorator."""
         save_dir = str(tmp_path / "model")
         bert_tiny_transformer.save(save_dir)
 
@@ -751,9 +751,12 @@ class TestLoadInitKwargs:
             model_kwargs={"torch_dtype": "float16"},
             cache_folder="/tmp/cache",
         )
-        assert "model_args" in kwargs
-        assert kwargs["model_args"]["torch_dtype"] == "float16"
-        assert kwargs["cache_dir"] == "/tmp/cache"
+        assert "model_kwargs" in kwargs
+        assert kwargs["model_kwargs"]["torch_dtype"] == "float16"
+        # cache_folder is distributed into each kwargs dict directly
+        assert kwargs["model_kwargs"]["cache_dir"] == "/tmp/cache"
+        assert kwargs["processor_kwargs"]["cache_dir"] == "/tmp/cache"
+        assert kwargs["config_kwargs"]["cache_dir"] == "/tmp/cache"
         assert kwargs["backend"] == "torch"
 
 

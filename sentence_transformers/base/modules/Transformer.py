@@ -57,7 +57,7 @@ from sentence_transformers.base.modules.modality_utils import (
     PairStrInputs,
     StrInputs,
 )
-from sentence_transformers.util.decorators import deprecated_kwargs_decorator
+from sentence_transformers.util.decorators import transformer_kwargs_decorator
 
 try:
     from typing import Self
@@ -288,39 +288,41 @@ class Transformer(InputModule):
     Loads the correct class, e.g. BERT / RoBERTa etc.
 
     Args:
-        model_name_or_path: Hugging Face models name
-            (https://huggingface.co/models)
+        model_name_or_path: Hugging Face model name or path
+            (https://huggingface.co/models).
         transformer_task: The task to load the model for. Can be
-            ``feature-extraction``, ``sequence-classification``,
-            ``text-generation``, or ``fill-mask``.
-        max_seq_length: Truncate any inputs longer than max_seq_length
-        model_kwargs: Keyword arguments passed to the Hugging Face
-            Transformers model
-        processor_kwargs: Keyword arguments passed to the Hugging Face
-            Transformers processor/tokenizer
-        config_kwargs: Keyword arguments passed to the Hugging Face
-            Transformers config
-        processing_kwargs: Optional keyword arguments applied when *calling*
-            the processor during preprocessing. Keys are modality names
-            (``"text"``, ``"audio"``, ``"image"``, ``"video"``), ``"common"``
-            for kwargs shared across all modalities, or ``"chat_template"``
-            for kwargs forwarded to ``apply_chat_template`` (e.g.
+            ``"feature-extraction"``, ``"sequence-classification"``,
+            ``"text-generation"``, or ``"fill-mask"``.
+        model_kwargs: Keyword arguments forwarded to
+            ``AutoModel.from_pretrained`` when loading the model.
+        processor_kwargs: Keyword arguments forwarded to
+            ``AutoProcessor.from_pretrained`` when loading the
+            processor/tokenizer.
+        config_kwargs: Keyword arguments forwarded to
+            ``AutoConfig.from_pretrained`` when loading the config.
+        processing_kwargs: Keyword arguments applied when *calling* the
+            processor during preprocessing. This is a nested dict whose keys
+            are modality names (``"text"``, ``"audio"``, ``"image"``,
+            ``"video"``), ``"common"`` for kwargs shared across all
+            modalities, or ``"chat_template"`` for kwargs forwarded to
+            ``apply_chat_template`` (e.g.
             ``{"add_generation_prompt": True}``). Modality and common kwargs
-            override the built-in defaults.
-        cache_dir: Cache dir for Hugging Face Transformers to store/load
-            models
-        do_lower_case: If true, lowercases the input (independent if the
-            model is cased or not)
-        tokenizer_name_or_path: Name or path of the tokenizer. When
-            None, then model_name_or_path is used. Deprecated.
-        backend: Backend used for model inference. Can be `torch`, `onnx`,
-            or `openvino`. Default is `torch`.
+            override the built-in defaults. Saved to and loaded from the
+            model configuration file.
+        backend: Backend used for model inference. Can be ``"torch"``,
+            ``"onnx"``, or ``"openvino"``. Default is ``"torch"``.
         modality_config: Optional custom modality configuration mapping
             modality names to method and output name dicts.
         module_output_name: The name of the output feature this module
             creates. Required when ``modality_config`` is provided.
         message_format: How to handle message-format inputs. Default is
-            ``auto``.
+            ``"auto"``.
+        max_seq_length: Truncate any inputs longer than this value. Prefer
+            setting ``model_max_length`` via ``processor_kwargs`` instead.
+        do_lower_case: If true, lowercases the input (independent of whether
+            the model is cased or not). Rarely needed.
+        tokenizer_name_or_path: Name or path of the tokenizer. When
+            None, then ``model_name_or_path`` is used. Deprecated.
     """
 
     config_file_name: str = "sentence_bert_config.json"
@@ -333,26 +335,23 @@ class Transformer(InputModule):
     ]
     save_in_root: bool = True
 
-    @deprecated_kwargs_decorator(
-        {"model_args": "model_kwargs", "tokenizer_args": "processor_kwargs", "config_args": "config_kwargs"},
-        "Transformer",
-    )
+    @transformer_kwargs_decorator
     def __init__(
         self,
         model_name_or_path: str,
+        *,
         transformer_task: TransformerTask = "feature-extraction",
-        max_seq_length: int | None = None,
         model_kwargs: dict[str, Any] | None = None,
         processor_kwargs: dict[str, Any] | None = None,
         config_kwargs: dict[str, Any] | None = None,
         processing_kwargs: dict[str, dict[str, Any]] | None = None,
-        cache_dir: str | None = None,
-        do_lower_case: bool = False,
-        tokenizer_name_or_path: str | None = None,
         backend: Literal["torch", "onnx", "openvino"] = "torch",
         modality_config: ModalityConfig | None = None,
         module_output_name: str | None = None,
         message_format: MessageFormat = "auto",
+        max_seq_length: int | None = None,
+        do_lower_case: bool = False,
+        tokenizer_name_or_path: str | None = None,
     ) -> None:
         super().__init__()
         self.transformer_task: TransformerTask = transformer_task
@@ -360,10 +359,6 @@ class Transformer(InputModule):
             raise ValueError(
                 f"Unsupported transformer_task '{transformer_task}'. Supported tasks are: {list(TRANSFORMER_TASK_TO_AUTO_MODEL.keys())}"
             )
-        # TODO: Reorder the args in __init__ body?
-        self.do_lower_case = do_lower_case
-        self.backend = backend
-        self.message_format = message_format
         if model_kwargs is None:
             model_kwargs = {}
         if processor_kwargs is None:
@@ -371,10 +366,13 @@ class Transformer(InputModule):
         if config_kwargs is None:
             config_kwargs = {}
         self.processing_kwargs: dict[str, dict[str, Any]] = processing_kwargs or {}
+        self.backend = backend
+        self.message_format = message_format
+        self.do_lower_case = do_lower_case
         self._prompt_length_mapping = {}
         self._method_signature_cache: dict[str, set[str]] = {}
 
-        config, is_peft_model = self._load_config(model_name_or_path, cache_dir, backend, config_kwargs)
+        config, is_peft_model = self._load_config(model_name_or_path, backend, config_kwargs)
 
         if (
             transformer_task == "sequence-classification"
@@ -389,7 +387,7 @@ class Transformer(InputModule):
             config.num_labels = 1
 
         self.model = self._load_model(
-            model_name_or_path, transformer_task, config, cache_dir, backend, is_peft_model, **model_kwargs
+            model_name_or_path, transformer_task, config, backend, is_peft_model, **model_kwargs
         )
 
         # Get the signature of the auto_model's forward method to pass only the expected arguments from `features`,
@@ -408,7 +406,6 @@ class Transformer(InputModule):
             processor_kwargs["model_max_length"] = max_seq_length
         self.processor = AutoProcessor.from_pretrained(
             tokenizer_name_or_path if tokenizer_name_or_path is not None else model_name_or_path,
-            cache_dir=cache_dir,
             **processor_kwargs,
         )
 
@@ -881,25 +878,22 @@ class Transformer(InputModule):
         return prompt_length
 
     def _load_config(
-        self, model_name_or_path: str, cache_dir: str | None, backend: str, config_kwargs: dict[str, Any]
+        self, model_name_or_path: str, backend: str, config_kwargs: dict[str, Any]
     ) -> tuple[PeftConfig | PretrainedConfig, bool]:
         """Loads the transformers or PEFT configuration
 
         Args:
             model_name_or_path (str): The model name on Hugging Face (e.g. 'sentence-transformers/all-MiniLM-L6-v2')
                 or the path to a local model directory.
-            cache_dir (str | None): The cache directory to store the model configuration.
             backend (str): The backend used for model inference. Can be `torch`, `onnx`, or `openvino`.
             config_kwargs (dict[str, Any]): Keyword arguments passed to the Hugging Face Transformers config.
 
         Returns:
             tuple[PeftConfig | PretrainedConfig, bool]: The model configuration and a boolean indicating whether the model is a PEFT model.
         """
-        config_kwargs.setdefault("cache_dir", cache_dir)
-
         adapter_config_file = find_adapter_config_file(
             model_name_or_path,
-            cache_dir=config_kwargs["cache_dir"],
+            cache_dir=config_kwargs.get("cache_dir"),
             token=config_kwargs.get("token"),
             revision=config_kwargs.get("revision"),
             subfolder=config_kwargs.get("subfolder", ""),
@@ -928,10 +922,9 @@ class Transformer(InputModule):
         model_name_or_path: str,
         transformer_task: Literal["feature-extraction", "sequence-classification", "text-generation", "fill-mask"],
         config: PeftConfig | PretrainedConfig,
-        cache_dir: str | None,
         backend: str,
         is_peft_model: bool,
-        **model_args,
+        **model_kwargs,
     ) -> PreTrainedModel:
         """Loads the transformers or PEFT model into the `auto_model` attribute
 
@@ -939,37 +932,36 @@ class Transformer(InputModule):
             model_name_or_path (str): The model name on Hugging Face (e.g. 'sentence-transformers/all-MiniLM-L6-v2')
                 or the path to a local model directory.
             config ("PeftConfig" | PretrainedConfig): The model configuration.
-            cache_dir (str | None): The cache directory to store the model configuration.
             backend (str): The backend used for model inference. Can be `torch`, `onnx`, or `openvino`.
             is_peft_model (bool): Whether the model is a PEFT model.
-            model_args (dict[str, Any]): Keyword arguments passed to the Hugging Face Transformers model.
+            model_kwargs (dict[str, Any]): Keyword arguments passed to the Hugging Face Transformers model.
         """
         if backend == "torch":
             # When loading a PEFT model, we need to load the base model first,
-            # but some model_args are only for the adapter
+            # but some model_kwargs are only for the adapter
             if is_peft_model:
-                model_args.pop("revision", None)
+                model_kwargs.pop("revision", None)
 
             if transformer_task == "feature-extraction":
-                model = self._load_encoder_only_model(model_name_or_path, config, cache_dir, **model_args)
+                model = self._load_encoder_only_model(model_name_or_path, config, **model_kwargs)
                 if model is not None:
                     return model
 
             model_cls = TRANSFORMER_TASK_TO_AUTO_MODEL[transformer_task]
-            return model_cls.from_pretrained(model_name_or_path, config=config, cache_dir=cache_dir, **model_args)
+            return model_cls.from_pretrained(model_name_or_path, config=config, **model_kwargs)
         elif backend == "onnx":
             return load_onnx_model(
                 model_name_or_path=model_name_or_path,
                 config=config,
                 task_name=transformer_task,
-                **model_args,
+                **model_kwargs,
             )
         elif backend == "openvino":
             return load_openvino_model(
                 model_name_or_path=model_name_or_path,
                 config=config,
                 task_name=transformer_task,
-                **model_args,
+                **model_kwargs,
             )
         else:
             raise ValueError(f"Unsupported backend '{backend}'. `backend` should be `torch`, `onnx`, or `openvino`.")
@@ -978,8 +970,7 @@ class Transformer(InputModule):
         self,
         model_name_or_path: str,
         config: PretrainedConfig,
-        cache_dir: str | None,
-        **model_args,
+        **model_kwargs,
     ) -> PreTrainedModel | None:
         """Load encoder-only variants for encoder-decoder architectures.
 
@@ -993,9 +984,7 @@ class Transformer(InputModule):
             with set_temporary_class_attrs(
                 model_cls, _keys_to_ignore_on_load_unexpected=["decoder.*"], **extra_class_attrs
             ):
-                return model_cls.from_pretrained(
-                    model_name_or_path, config=load_config or config, cache_dir=cache_dir, **model_args
-                )
+                return model_cls.from_pretrained(model_name_or_path, config=load_config or config, **model_kwargs)
 
         # Special cases that need extra handling before/during loading
         if isinstance(config, T5GemmaConfig):
@@ -1015,9 +1004,7 @@ class Transformer(InputModule):
             # as opposed to loading the encoder from a full T5Gemma2Config (handled above).
             from transformers.models.t5gemma2.modeling_t5gemma2 import T5Gemma2Encoder
 
-            return T5Gemma2Encoder.from_pretrained(
-                model_name_or_path, config=config, cache_dir=cache_dir, **model_args
-            )
+            return T5Gemma2Encoder.from_pretrained(model_name_or_path, config=config, **model_kwargs)
 
         # Standard encoder-only models from the registry
         for config_cls, module_path, class_name in _ENCODER_ONLY_MODELS:
@@ -1266,37 +1253,40 @@ class Transformer(InputModule):
         hub_kwargs = {
             "subfolder": subfolder,
             "token": token,
+            "cache_dir": cache_folder,  # Transformers uses `cache_dir` instead of `cache_folder`
             "revision": revision,
             "local_files_only": local_files_only,
             "trust_remote_code": trust_remote_code,
         }
 
         # 3rd priority: config file
-        # Config files use the old key names (model_args, tokenizer_args, config_args) for backwards compat.
-        # We keep these names in the output dict so old custom modules still work; the deprecated_kwargs_decorator
-        # on Transformer.__init__ handles renaming them to model_kwargs/processor_kwargs/config_kwargs.
-        if "model_args" not in config:
-            config["model_args"] = {}
-        if "tokenizer_args" not in config:
-            config["tokenizer_args"] = {}
-        if "config_args" not in config:
-            config["config_args"] = {}
+        # Config files may use the old key names (model_args, tokenizer_args, config_args) for backwards compat.
+        # We normalize them to the new names (model_kwargs, processor_kwargs, config_kwargs) here so we don't
+        # trigger deprecation warnings from the transformer_kwargs_decorator on Transformer.__init__.
+        _OLD_TO_NEW = {
+            "model_args": "model_kwargs",
+            "tokenizer_args": "processor_kwargs",
+            "config_args": "config_kwargs",
+        }
+        for old_name, new_name in _OLD_TO_NEW.items():
+            if old_name in config:
+                config[new_name] = config.pop(old_name)
+            config.setdefault(new_name, {})
 
         # 2nd priority: hub_kwargs
-        config["model_args"].update(hub_kwargs)
-        config["tokenizer_args"].update(hub_kwargs)
-        config["config_args"].update(hub_kwargs)
+        config["model_kwargs"].update(hub_kwargs)
+        config["processor_kwargs"].update(hub_kwargs)
+        config["config_kwargs"].update(hub_kwargs)
 
         # 1st priority: kwargs passed to SentenceTransformer
         if model_kwargs:
-            config["model_args"].update(model_kwargs)
+            config["model_kwargs"].update(model_kwargs)
         if tokenizer_kwargs:
-            config["tokenizer_args"].update(tokenizer_kwargs)
+            config["processor_kwargs"].update(tokenizer_kwargs)
         if config_kwargs:
-            config["config_args"].update(config_kwargs)
+            config["config_kwargs"].update(config_kwargs)
 
-        # Map cache_folder (SentenceTransformer's name) to cache_dir (Transformer __init__'s name)
-        return {**config, "cache_dir": cache_folder, "backend": backend}
+        return {**config, "backend": backend}
 
     @classmethod
     def load_config(

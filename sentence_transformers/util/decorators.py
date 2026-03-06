@@ -6,37 +6,48 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def deprecated_kwargs_decorator(kwargs_renamed_mapping: dict[str, str], class_name: str) -> callable:
-    """A decorator that renames deprecated keyword arguments with a warning.
+def transformer_kwargs_decorator(func):
+    """Decorator for :class:`Transformer.__init__` that handles deprecated keyword arguments.
 
-    Args:
-        kwargs_renamed_mapping: Mapping of ``{old_name: new_name}`` for kwargs to rename.
-        class_name: Name of the class to include in the deprecation warning.
+    Handles the following legacy kwargs:
 
-    Example::
-
-        @deprecated_kwargs_decorator({"tokenizer_args": "processor_kwargs"}, "Transformer")
-        def __init__(self, model_name_or_path, processor_kwargs=None):
-            ...
+    * ``model_args`` -> ``model_kwargs``
+    * ``tokenizer_args`` -> ``processor_kwargs``
+    * ``config_args`` -> ``config_kwargs``
+    * ``cache_dir`` -> distributed into ``model_kwargs``, ``processor_kwargs``, and ``config_kwargs``
     """
+    _RENAMED_KWARGS = {
+        "model_args": "model_kwargs",
+        "tokenizer_args": "processor_kwargs",
+        "config_args": "config_kwargs",
+    }
 
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            for old_name, new_name in kwargs_renamed_mapping.items():
-                if old_name in kwargs:
-                    kwarg_value = kwargs.pop(old_name)
-                    logger.warning(
-                        f"The {class_name} `{old_name}` argument was renamed and is now deprecated, "
-                        f"please use `{new_name}` instead."
-                    )
-                    if new_name not in kwargs:
-                        kwargs[new_name] = kwarg_value
-            return func(*args, **kwargs)
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        for old_name, new_name in _RENAMED_KWARGS.items():
+            if old_name in kwargs:
+                kwarg_value = kwargs.pop(old_name)
+                logger.warning(
+                    f"The Transformer `{old_name}` argument was renamed and is now deprecated, "
+                    f"please use `{new_name}` instead."
+                )
+                if new_name not in kwargs:
+                    kwargs[new_name] = kwarg_value
 
-        return wrapper
+        if "cache_dir" in kwargs:
+            cache_dir = kwargs.pop("cache_dir")
+            if cache_dir is not None:
+                logger.warning(
+                    "The Transformer `cache_dir` argument is deprecated. "
+                    "Please pass `cache_dir` via `model_kwargs`, `processor_kwargs`, and/or `config_kwargs` instead."
+                )
+                for dict_name in ("model_kwargs", "processor_kwargs", "config_kwargs"):
+                    kwargs.setdefault(dict_name, {})
+                    kwargs[dict_name].setdefault("cache_dir", cache_dir)
 
-    return decorator
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 def save_to_hub_args_decorator(func):

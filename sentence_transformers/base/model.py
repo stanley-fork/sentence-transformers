@@ -889,16 +889,19 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
             # This indicates an older module that does not support the newer loading method with multiple arguments.
             if len(load_signature.parameters) == 1:
                 signature = inspect.signature(module_class.__init__)
-                # If the module's `__init__` method contains specific keyword arguments like `model_args` and `config_args`,
-                # it is likely Transformer-based. These arguments are commonly used in Transformer models to configure
-                # the model and tokenizer during initialization.
-                # Example: Models with custom modules on the Hugging Face Hub like
-                # https://huggingface.co/jinaai/jina-embeddings-v3 may use this logic.
-                if {"model_args", "config_args"} <= set(signature.parameters):
-                    # Load initialization arguments specific to Transformer-based modules. This includes
-                    # arguments for loading the model, tokenizer, and configuration, as well as any
-                    # additional module-specific keyword arguments.
-                    common_transformer_init_kwargs = Transformer._load_init_kwargs(
+                # Detect Transformer-based modules by checking for model/config kwargs in __init__.
+                # Old custom modules (e.g. jinaai/jina-embeddings-v3) use model_args/config_args;
+                # new-style modules use model_kwargs/config_kwargs.
+                init_params = set(signature.parameters)
+                _NEW_TO_OLD = {
+                    "model_kwargs": "model_args",
+                    "processor_kwargs": "tokenizer_args",
+                    "config_kwargs": "config_args",
+                }
+                uses_old_names = {"model_args", "config_args"} <= init_params
+                uses_new_names = {"model_kwargs", "config_kwargs"} <= init_params
+                if uses_new_names or uses_old_names:
+                    init_kwargs = Transformer._load_init_kwargs(
                         model_name_or_path,
                         # Loading-specific keyword arguments
                         subfolder=module_config["path"],
@@ -913,7 +916,14 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
                         config_kwargs=config_kwargs,
                         backend=self.backend,
                     )
-                    module = module_class(model_name_or_path, **common_transformer_init_kwargs)
+
+                    # Remap new-style keys back to old-style for old custom modules.
+                    if uses_old_names and not uses_new_names:
+                        for new_name, old_name in _NEW_TO_OLD.items():
+                            if new_name in init_kwargs:
+                                init_kwargs[old_name] = init_kwargs.pop(new_name)
+
+                    module = module_class(model_name_or_path, **init_kwargs)
 
                 else:
                     # Old modules that don't support the new loading method and don't seem Transformer-based
