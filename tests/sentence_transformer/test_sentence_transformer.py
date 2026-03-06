@@ -474,7 +474,7 @@ def test_prompt_length_calculation(
     if has_bos_token:
         only_prompt_length += 1
 
-    assert model[0]._prompt_length_mapping == {("Prompt: ", "query"): only_prompt_length}
+    assert model[0]._prompt_length_mapping == {("Prompt: ", ("task", "query")): only_prompt_length}
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA must be available to test float16 support.")

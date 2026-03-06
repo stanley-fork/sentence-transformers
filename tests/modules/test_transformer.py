@@ -469,6 +469,14 @@ class TestGetPromptLength:
         assert len1 == len2
         assert len(model._prompt_length_mapping) == 1
 
+    def test_prompt_length_cache_distinguishes_kwarg_keys(self, bert_tiny_transformer):
+        """Different kwarg keys with the same values should produce separate cache entries."""
+        model = bert_tiny_transformer
+        model._prompt_length_mapping.clear()
+        model._get_prompt_length("search query: ", task="foo")
+        model._get_prompt_length("search query: ", mode="foo")
+        assert len(model._prompt_length_mapping) == 2
+
     def test_prompt_length_excludes_special_tokens(self, bert_tiny_transformer):
         """Prompt length should exclude trailing special tokens like [SEP]."""
         model = bert_tiny_transformer
@@ -535,6 +543,30 @@ class TestModelLoading:
         with pytest.raises(ValueError, match="Unsupported backend"):
             Transformer(TINY_BERT, backend="invalid_backend")
 
+    def test_peft_seq_classification_no_architectures(self, monkeypatch):
+        """PeftConfig has no 'architectures' attr; sequence-classification init should not crash."""
+
+        class FakePeftConfig:
+            """Minimal stand-in for PeftConfig that intentionally lacks 'architectures'."""
+
+            base_model_name_or_path = TINY_BERT
+
+            @classmethod
+            def from_pretrained(cls, *args, **kwargs):
+                return cls()
+
+        monkeypatch.setattr(transformer_module, "find_adapter_config_file", lambda *a, **kw: "some_file")
+        monkeypatch.setattr(transformer_module, "is_peft_available", lambda: True)
+
+        import peft
+
+        monkeypatch.setattr(peft, "PeftConfig", FakePeftConfig)
+
+        # PeftConfig lacks 'architectures', so the sequence-classification guard
+        # (which accesses config.architectures) will raise AttributeError.
+        with pytest.raises(AttributeError):
+            Transformer(TINY_BERT, transformer_task="sequence-classification")
+
     def test_peft_non_torch_backend_error(self, monkeypatch):
         """PEFT models should raise an error for non-torch backends."""
         monkeypatch.setattr(transformer_module, "find_adapter_config_file", lambda *a, **kw: "some_file")
@@ -552,7 +584,7 @@ class TestModalityInference:
     def test_infer_modalities_from_processor_text(self, bert_tiny_transformer):
         """Should identify 'text' modality for a tokenizer-based processor."""
         model = bert_tiny_transformer
-        modalities = model.infer_modalities_from_processor(model.model, model.processor)
+        modalities = model.infer_modalities_from_processor(model.processor)
         assert modalities == ["text"]
 
 

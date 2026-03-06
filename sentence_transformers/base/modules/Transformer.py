@@ -158,6 +158,9 @@ _ENCODER_ONLY_MODELS: list[tuple[type, str, str]] = [
     (MoonshineConfig, "transformers.models.moonshine.modeling_moonshine", "MoonshineEncoder"),
     (WhisperConfig, "transformers.models.whisper.modeling_whisper", "WhisperEncoder"),
     (MarianConfig, "transformers.models.marian.modeling_marian", "MarianEncoder"),
+    # T5Gemma2TextConfig is for loading from an already encoder-only checkpoint;
+    # loading the encoder from a full T5Gemma2Config is handled separately in _load_encoder_only_model.
+    (T5Gemma2TextConfig, "transformers.models.t5gemma2.modeling_t5gemma2", "T5Gemma2Encoder"),
 ]
 
 # Hard-coded modality configs for model types that can't be handled by the general inference path.
@@ -271,6 +274,17 @@ _EDGE_CASE_MODALITY_CONFIGS: dict[str, tuple[ModalityConfig, str, bool]] = {
 }
 
 
+def _has_lowercase(normalizer) -> bool:
+    """Check whether a tokenizers normalizer (or sequence of normalizers) includes Lowercase."""
+    if normalizer is None:
+        return False
+    if isinstance(normalizer, Lowercase):
+        return True
+    if isinstance(normalizer, Sequence):
+        return any(isinstance(n, Lowercase) for n in normalizer)
+    return False
+
+
 @contextmanager
 def set_temporary_class_attrs(cls, **overrides):
     originals = {name: getattr(cls, name, None) for name in overrides}
@@ -354,11 +368,11 @@ class Transformer(InputModule):
         tokenizer_name_or_path: str | None = None,
     ) -> None:
         super().__init__()
-        self.transformer_task: TransformerTask = transformer_task
         if transformer_task not in TRANSFORMER_TASK_TO_AUTO_MODEL:
             raise ValueError(
                 f"Unsupported transformer_task '{transformer_task}'. Supported tasks are: {list(TRANSFORMER_TASK_TO_AUTO_MODEL.keys())}"
             )
+        self.transformer_task: TransformerTask = transformer_task
         if model_kwargs is None:
             model_kwargs = {}
         if processor_kwargs is None:
@@ -390,12 +404,9 @@ class Transformer(InputModule):
             model_name_or_path, transformer_task, config, backend, is_peft_model, **model_kwargs
         )
 
-        # Get the signature of the auto_model's forward method to pass only the expected arguments from `features`,
-        # plus some common values like "input_ids", "attention_mask", etc.
-        model_forward_params = list(inspect.signature(self.model.forward).parameters)
-        # Always include these common parameter names so that preprocessed features are passed through
-        # even if the model uses **kwargs or a wrapper that hides them from the signature.
-        self.model_forward_params = set(model_forward_params) | {
+        # Start from the forward signature and add common parameter names as a safety net
+        # for models that use **kwargs or a wrapper that hides them from the signature.
+        self.model_forward_params = set(inspect.signature(self.model.forward).parameters) | {
             "input_ids",
             "attention_mask",
             "token_type_ids",
@@ -423,18 +434,8 @@ class Transformer(InputModule):
 
             if do_lower_case:
                 if self.tokenizer.is_fast:
-
-                    def has_lowercase(normalizer):
-                        if normalizer is None:
-                            return False
-                        if isinstance(normalizer, Lowercase):
-                            return True
-                        if isinstance(normalizer, Sequence):
-                            return any(isinstance(n, Lowercase) for n in normalizer)
-                        return False
-
                     normalizer = self.tokenizer.backend_tokenizer.normalizer
-                    if not has_lowercase(normalizer):
+                    if not _has_lowercase(normalizer):
                         new_normalizers = [Lowercase()]
                         if isinstance(normalizer, Sequence):
                             new_normalizers += list(normalizer)
@@ -521,12 +522,7 @@ class Transformer(InputModule):
 
     def preprocess(
         self,
-        inputs: list[StrInputs | PairStrInputs | DictInputs | ImageInputs | ArrayInputs]
-        | StrInputs
-        | PairStrInputs
-        | DictInputs
-        | ImageInputs
-        | ArrayInputs,
+        inputs: list[StrInputs | PairStrInputs | DictInputs | ImageInputs | ArrayInputs],
         prompt: str | None = None,
         padding: str | bool = True,
         **kwargs,
@@ -534,10 +530,12 @@ class Transformer(InputModule):
         """Preprocess inputs into model-ready features.
 
         Args:
-            inputs: List of inputs (must be wrapped in a list). Can contain strings, dicts with
-                modality keys, PIL images, or numpy/torch arrays for audio/video.
+            inputs: List of inputs. Can contain strings, dicts with modality keys, PIL images,
+                or numpy/torch arrays for audio/video.
             prompt: Optional prompt to prepend to text inputs or inject as a system message.
             padding: Padding strategy for the processor.
+            **kwargs: Additional keyword arguments forwarded to prompt length computation
+                (e.g. ``task``). Only used when ``prompt`` is provided for text inputs.
 
         Returns:
             Dictionary containing preprocessed tensors with a ``modality`` key indicating the
@@ -579,18 +577,15 @@ class Transformer(InputModule):
             )
 
         # Incorporate prompt into inputs if applicable
-        if prompt:
-            if modality == "message":
-                processor_inputs["message"] = self.input_formatter.prepend_prompt_to_messages(
-                    processor_inputs["message"], prompt
-                )
-                # Models relying on the message format don't support excluding prompt tokens in mean pooling,
-                # so we don't track prompt length.
-            elif modality == "text":
-                processor_inputs["text"] = self.input_formatter.prepend_prompt_to_texts(
-                    processor_inputs["text"], prompt
-                )
-                prompt_length = self._get_prompt_length(prompt, **kwargs)
+        if prompt and modality == "message":
+            processor_inputs["message"] = self.input_formatter.prepend_prompt_to_messages(
+                processor_inputs["message"], prompt
+            )
+            # Models relying on the message format don't support excluding prompt tokens in mean pooling,
+            # so we don't track prompt length.
+        elif prompt and modality == "text":
+            processor_inputs["text"] = self.input_formatter.prepend_prompt_to_texts(processor_inputs["text"], prompt)
+            prompt_length = self._get_prompt_length(prompt, **kwargs)
 
         processor_output = self._call_processor(modality, processor_inputs, modality_kwargs, common_kwargs)
         processor_output["modality"] = modality
@@ -731,14 +726,14 @@ class Transformer(InputModule):
                     return hidden_size
 
         raise ValueError(
-            f"Could not determine embedding dimension from model config. Config type: {type(self.model.config).__name__}. "
+            f"Could not determine embedding dimension from model config. Config type: {type(self.model.config).__name__}."
         )
 
     def _call_processor(
         self,
         modality: Modality,
         processor_inputs: dict[str, list],
-        modality_kwargs: dict[str, dict],
+        modality_kwargs: dict[str, dict[str, Any]],
         common_kwargs: dict[str, Any],
     ) -> dict[str, Any]:
         """Call the appropriate processor with the correct arguments.
@@ -860,7 +855,7 @@ class Transformer(InputModule):
 
         Returns None if the processor does not produce ``input_ids``.
         """
-        cache_key = (prompt, *sorted(kwargs.values()))
+        cache_key = (prompt, *sorted(kwargs.items()))
         if cache_key in self._prompt_length_mapping:
             return self._prompt_length_mapping[cache_key]
 
@@ -937,8 +932,9 @@ class Transformer(InputModule):
             model_kwargs (dict[str, Any]): Keyword arguments passed to the Hugging Face Transformers model.
         """
         if backend == "torch":
-            # When loading a PEFT model, we need to load the base model first,
-            # but some model_kwargs are only for the adapter
+            # When loading a PEFT model, we load the base model first. The revision
+            # (e.g. "main") refers to the adapter checkpoint, not the base model, so
+            # we must not pass it to the base model's from_pretrained.
             if is_peft_model:
                 model_kwargs.pop("revision", None)
 
@@ -999,13 +995,6 @@ class Transformer(InputModule):
             # T5Gemma2Encoder expects the encoder sub-config, not the full composite config
             return _load_encoder(T5Gemma2Encoder, load_config=config.encoder, base_model_prefix="model.encoder")
 
-        if isinstance(config, T5Gemma2TextConfig):
-            # Direct loading from an encoder-only checkpoint that already has T5Gemma2TextConfig,
-            # as opposed to loading the encoder from a full T5Gemma2Config (handled above).
-            from transformers.models.t5gemma2.modeling_t5gemma2 import T5Gemma2Encoder
-
-            return T5Gemma2Encoder.from_pretrained(model_name_or_path, config=config, **model_kwargs)
-
         # Standard encoder-only models from the registry
         for config_cls, module_path, class_name in _ENCODER_ONLY_MODELS:
             if isinstance(config, config_cls):
@@ -1041,7 +1030,7 @@ class Transformer(InputModule):
                     )
             return modality_config, module_output_name
 
-        modalities = self.infer_modalities_from_processor(model, processor)
+        modalities = self.infer_modalities_from_processor(processor)
         if hasattr(processor, "chat_template") and processor.chat_template is not None:
             modalities.append("message")
 
@@ -1077,7 +1066,11 @@ class Transformer(InputModule):
             for modality in modalities
         }, default_module_output_name
 
-    def infer_modalities_edge_cases(self, model: PreTrainedModel, processor) -> tuple[ModalityConfig, str] | None:
+    def infer_modalities_edge_cases(
+        self,
+        model: PreTrainedModel,
+        processor: ProcessorMixin | PreTrainedTokenizerBase | FeatureExtractionMixin | ImageProcessingMixin,
+    ) -> tuple[ModalityConfig, str] | None:
         """Return a ``(modality_config, module_output_name)`` for model types that cannot be handled
         by the general :meth:`infer_modalities` inference path, or ``None`` to fall through.
 
@@ -1102,7 +1095,10 @@ class Transformer(InputModule):
             }
         return modality_config, module_output_name
 
-    def infer_modalities_from_processor(self, model: PreTrainedModel, processor) -> list[Modality]:
+    def infer_modalities_from_processor(
+        self,
+        processor: ProcessorMixin | PreTrainedTokenizerBase | FeatureExtractionMixin | ImageProcessingMixin,
+    ) -> list[Modality]:
         """Determine which modalities the processor supports by inspecting its attributes or type."""
         processor_attribute_mapping: dict[str, Modality] = {
             "tokenizer": "text",
@@ -1128,15 +1124,18 @@ class Transformer(InputModule):
             if isinstance(processor, processor_class):
                 return [modality_name]
 
-        # This should not be reached
+        logger.warning(
+            f"Could not determine modalities from processor of type {type(processor).__name__}. "
+            "Returning an empty modality list."
+        )
         return []
 
-    def _get_processor_attributes(self) -> dict[str, Any] | list[str] | None:
+    def _get_processor_attributes(self) -> list[str] | None:
         """Get the attributes of the processor if available. Will be removed in the future as transformers v5
         becomes the minimum requirement.
 
         Returns:
-            dict[str, Any] | None: The attributes of the processor, or None if not available.
+            list[str] | None: The processor attribute names, or None if not available.
         """
         if hasattr(self.processor, "get_attributes"):  # Transformers v5+
             return self.processor.get_attributes()
@@ -1186,6 +1185,7 @@ class Transformer(InputModule):
         return None
 
     def save(self, output_path: str, *args, safe_serialization: bool = True, **kwargs) -> None:
+        """Save the model, processor, and module config to ``output_path``."""
         self.model.save_pretrained(output_path, safe_serialization=safe_serialization)
         self.processor.save_pretrained(output_path)
         self.save_config(output_path)
@@ -1203,11 +1203,13 @@ class Transformer(InputModule):
         # Module-specific arguments
         trust_remote_code: bool = False,
         model_kwargs: dict[str, Any] | None = None,
+        # TODO: Rename to `processor_kwargs` for consistency with __init__, with backwards compatibility
         tokenizer_kwargs: dict[str, Any] | None = None,
         config_kwargs: dict[str, Any] | None = None,
         backend: str = "torch",
         **kwargs,
     ) -> Self:
+        """Load a Transformer module from a pretrained model directory or Hugging Face model name."""
         init_kwargs = cls._load_init_kwargs(
             model_name_or_path=model_name_or_path,
             subfolder=subfolder,
@@ -1241,6 +1243,10 @@ class Transformer(InputModule):
         backend: str = "torch",
         **kwargs,
     ) -> dict[str, Any]:
+        """Build the kwargs dict for ``__init__`` by merging config file, hub kwargs, and caller overrides.
+
+        Priority (highest to lowest): caller kwargs > hub kwargs > config file values.
+        """
         config = cls.load_config(
             model_name_or_path=model_name_or_path,
             subfolder=subfolder,
@@ -1299,6 +1305,11 @@ class Transformer(InputModule):
         revision: str | None = None,
         local_files_only: bool = False,
     ) -> dict[str, Any]:
+        """Load the module config, trying several legacy config filenames for backward compatibility.
+
+        Handles deserialization of ``modality_config`` tuple keys (stored as comma-separated strings
+        in JSON) and strips ``trust_remote_code`` from all sub-dicts for security.
+        """
         config_filenames = (
             [config_filename]
             if config_filename
@@ -1370,6 +1381,7 @@ class Transformer(InputModule):
         return TRANSFORMER_TASK_DEFAULTS[config.get("transformer_task", "feature-extraction")]
 
     def get_config_dict(self) -> dict[str, Any]:
+        """Return the config dict for serialization, with tuple modality keys joined as comma-separated strings."""
         config_dict = super().get_config_dict()
 
         def serialize_tuple_keys(key):
