@@ -1021,12 +1021,13 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         """
         Retrieves the model_type from the config_sentence_transformers.json file.
 
-        This is used to determine the appropriate loading method:
-        - SentenceTransformer: These models should be loaded with _load_sbert_model when used with SentenceTransformer class
-        - SparseEncoder: These models should be loaded with _load_auto_model when used with SentenceTransformer class
+        This is used to determine whether the model being loaded matches the current class
+        (e.g., a SentenceTransformer model loaded with SentenceTransformer, or a SparseEncoder model
+        loaded with SparseEncoder). When the model type doesn't match, we switch to a converted
+        loading method to ensure compatibility.
 
-        When a model type doesn't match the class being used to load it, we switch loading methods
-        to ensure compatibility.
+        Defaults to "SentenceTransformer" if the config file is missing or has no "model_type" key,
+        for backwards compatibility with older models.
 
         Args:
             model_name_or_path (str): The name or path of the pre-trained model.
@@ -1036,7 +1037,7 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
             local_files_only (bool, optional): Whether to use only local files. Defaults to False.
 
         Returns:
-            Optional[str]: The model type (SentenceTransformer or SparseEncoder) if available, None otherwise.
+            str: The model type, e.g. "SentenceTransformer", "SparseEncoder", or "CrossEncoder".
         """
         config_sentence_transformers_json_path = load_file_path(
             model_name_or_path,
@@ -1048,11 +1049,11 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         )
 
         if config_sentence_transformers_json_path is None:
-            return "SentenceTransformer"  # TODO: What should we default to if there's no config?
+            return "SentenceTransformer"
 
         with open(config_sentence_transformers_json_path, encoding="utf8") as fIn:
             config = json.load(fIn)
-            # Default to "SentenceTransformer" if "model_type" does not exist in the config
+            # Older SentenceTransformer models won't have "model_type", so those default to "SentenceTransformer"
             return config.get("model_type", "SentenceTransformer")
 
     def _load_module_class_from_ref(
