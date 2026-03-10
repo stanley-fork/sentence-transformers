@@ -65,8 +65,14 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
     that are called sequentially in the forward pass.
     """
 
+    # The dataclass used to generate the model card when saving the model.
     model_card_data_class = BaseModelCardData
+    # The default Hugging Face organization to prepend to short model names.
     default_huggingface_organization: str | None = None
+    # Default prompts to initialize for new model instances (e.g. {"query": "", "document": ""}).
+    _default_prompts: dict[str, str] = {}
+    # The placeholder model ID in model card templates that gets replaced with the actual model ID.
+    _model_card_model_id_placeholder: str = "sentence_transformers_model_id"
 
     def __init__(
         self,
@@ -74,6 +80,8 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         *,
         modules: list[nn.Module] | OrderedDict[str, nn.Module] | None = None,
         device: str | None = None,
+        prompts: dict[str, str] | None = None,
+        default_prompt_name: str | None = None,
         cache_folder: str | None = None,
         trust_remote_code: bool = False,
         revision: str | None = None,
@@ -104,7 +112,14 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
             config_kwargs: Additional config configuration parameters
             model_card_data: Model card data object
             backend: Backend to use for inference (torch, onnx, openvino)
+            prompts: Dictionary of named prompts for the model
+            default_prompt_name: Default prompt name to use if none is specified
         """
+        default_prompts = dict(self._default_prompts)
+        if prompts:
+            default_prompts.update(prompts)
+        self.prompts = default_prompts
+        self.default_prompt_name = default_prompt_name
         self.trust_remote_code = trust_remote_code
         self.model_card_data = model_card_data or self.model_card_data_class(local_files_only=local_files_only)
         self.module_kwargs = None
@@ -183,6 +198,56 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
 
         # Pass the model to the model card data for later use
         self.model_card_data.register_model(self)
+
+        # Validate prompts after model loading (which may have merged config prompts)
+        self._validate_prompts()
+
+    def _validate_prompts(self) -> None:
+        """Validate prompt configuration and log prompt information."""
+        if self.default_prompt_name is not None and self.default_prompt_name not in self.prompts:
+            raise ValueError(
+                f"Default prompt name '{self.default_prompt_name}' not found in the configured prompts "
+                f"dictionary with keys {list(self.prompts.keys())!r}."
+            )
+
+        if non_empty_keys := [k for k, v in self.prompts.items() if v != ""]:
+            if len(non_empty_keys) == 1:
+                logger.info(f"1 prompt is loaded, with the key: {non_empty_keys[0]}")
+            else:
+                logger.info(f"{len(non_empty_keys)} prompts are loaded, with the keys: {non_empty_keys}")
+        if self.default_prompt_name:
+            logger.warning_once(
+                f"Default prompt name is set to '{self.default_prompt_name}'. "
+                f"This prompt will be applied to all inference calls, except if "
+                f"a `prompt` or `prompt_name` parameter is provided."
+            )
+
+    def _resolve_prompt(self, prompt: str | None, prompt_name: str | None) -> str | None:
+        """Resolve a prompt from a prompt name or the default prompt name.
+
+        Args:
+            prompt: An explicit prompt string, or None.
+            prompt_name: A key into ``self.prompts``, or None.
+
+        Returns:
+            The resolved prompt string, or None if no prompt applies.
+        """
+        if prompt is None:
+            if prompt_name is not None:
+                try:
+                    prompt = self.prompts[prompt_name]
+                except KeyError:
+                    raise ValueError(
+                        f"Prompt name '{prompt_name}' not found in the configured prompts dictionary with keys {list(self.prompts.keys())!r}."
+                    )
+            elif self.default_prompt_name is not None:
+                prompt = self.prompts.get(self.default_prompt_name, None)
+        elif prompt_name is not None:
+            logger.warning(
+                "Encode with either a `prompt`, a `prompt_name`, or neither, but not both. "
+                "Ignoring the `prompt_name` in favor of `prompt`."
+            )
+        return prompt
 
     def get_backend(self) -> Literal["torch", "onnx", "openvino"]:
         """Return the backend used for inference, which can be one of "torch", "onnx", or "openvino".
@@ -480,6 +545,8 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
     def _get_model_config(self) -> dict[str, Any]:
         return {
             "model_type": self.model_type,
+            "prompts": self.prompts,
+            "default_prompt_name": self.default_prompt_name,
             "__version__": {
                 "sentence_transformers": __version__,
                 "transformers": transformers.__version__,
@@ -515,20 +582,10 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         )
 
     def _update_default_model_id(self, model_card: str) -> str:
-        """
-        Update the default model ID in the model card.
-        Subclasses should override this to provide their own model ID replacement logic.
-
-        Args:
-            model_card: The model card text
-
-        Returns:
-            The updated model card text
-        """
+        """Update the default model ID in the model card."""
         if self.model_card_data.model_id:
-            # Default implementation - subclasses should override
             model_card = model_card.replace(
-                'model = SentenceTransformer("sentence_transformers_model_id"',
+                f'model = {self.__class__.__name__}("{self._model_card_model_id_placeholder}"',
                 f'model = {self.__class__.__name__}("{self.model_card_data.model_id}"',
             )
         return model_card
@@ -1007,7 +1064,12 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         return modules, module_kwargs
 
     def _parse_model_config(self, model_config: dict[str, Any]) -> None:
-        pass
+        # Only update prompts that aren't already set by the user or defaults
+        for prompt_name, prompt_text in model_config.get("prompts", {}).items():
+            if prompt_name not in self.prompts or not self.prompts[prompt_name]:
+                self.prompts[prompt_name] = prompt_text
+        if not self.default_prompt_name:
+            self.default_prompt_name = model_config.get("default_prompt_name", None)
 
     def _load_converted_modules(
         self,

@@ -137,6 +137,8 @@ class SparseEncoder(BaseModel):
 
     model_card_data_class = SparseEncoderModelCardData
     default_huggingface_organization: str | None = "sparse-encoder"
+    _default_prompts: dict[str, str] = {"query": "", "document": ""}
+    _model_card_model_id_placeholder = "sparse_encoder_model_id"
 
     @deprecated_kwargs(tokenizer_kwargs="processor_kwargs")
     def __init__(
@@ -145,6 +147,8 @@ class SparseEncoder(BaseModel):
         *,
         modules: list[nn.Module] | None = None,
         device: str | None = None,
+        prompts: dict[str, str] | None = None,
+        default_prompt_name: str | None = None,
         cache_folder: str | None = None,
         trust_remote_code: bool = False,
         revision: str | None = None,
@@ -156,20 +160,10 @@ class SparseEncoder(BaseModel):
         model_card_data: SparseEncoderModelCardData | None = None,
         backend: Literal["torch", "onnx", "openvino"] = "torch",
         # SparseEncoder-specific args
-        prompts: dict[str, str] | None = None,
-        default_prompt_name: str | None = None,
         similarity_fn_name: str | SimilarityFunction | None = None,
         max_active_dims: int | None = None,
     ) -> None:
-        # Set default prompts for SparseEncoder
-        default_prompts = {"query": "", "document": ""}
-        if prompts:
-            default_prompts.update(prompts)
-        prompts = default_prompts
-
-        # SparseEncoder-specific attributes
-        self.prompts = prompts
-        self.default_prompt_name = default_prompt_name
+        # Set before super().__init__() so _parse_model_config can check these
         self.similarity_fn_name = similarity_fn_name
 
         super().__init__(
@@ -186,6 +180,8 @@ class SparseEncoder(BaseModel):
             config_kwargs=config_kwargs,
             model_card_data=model_card_data,
             backend=backend,
+            prompts=prompts,
+            default_prompt_name=default_prompt_name,
         )
         # Narrow the type from BaseModelCardData
         self.model_card_data: SparseEncoderModelCardData
@@ -198,25 +194,6 @@ class SparseEncoder(BaseModel):
                 if isinstance(module, SparseAutoEncoder):
                     self.max_active_dims = module.k
                     break
-
-        # Validate and log prompts
-        if self.default_prompt_name is not None and self.default_prompt_name not in self.prompts:
-            raise ValueError(
-                f"Default prompt name '{self.default_prompt_name}' not found in the configured prompts "
-                f"dictionary with keys {list(self.prompts.keys())!r}."
-            )
-
-        if non_empty_keys := [k for k, v in self.prompts.items() if v != ""]:
-            if len(non_empty_keys) == 1:
-                logger.info(f"1 prompt is loaded, with the key: {non_empty_keys[0]}")
-            else:
-                logger.info(f"{len(non_empty_keys)} prompts are loaded, with the keys: {non_empty_keys}")
-        if self.default_prompt_name:
-            logger.warning_once(
-                f"Default prompt name is set to '{self.default_prompt_name}'. "
-                "This prompt will be applied to all `encode()` calls, except if `encode()` "
-                "is called with `prompt` or `prompt_name` parameters."
-            )
 
     @deprecated_kwargs(sentences="inputs")
     def encode_query(
@@ -515,22 +492,7 @@ class SparseEncoder(BaseModel):
                 embeddings = embeddings[0]
             return embeddings
 
-        # Handle prompts
-        if prompt is None:
-            if prompt_name is not None:
-                try:
-                    prompt = self.prompts[prompt_name]
-                except KeyError:
-                    raise ValueError(
-                        f"Prompt name '{prompt_name}' not found in the configured prompts dictionary with keys {list(self.prompts.keys())!r}."
-                    )
-            elif self.default_prompt_name is not None:
-                prompt = self.prompts.get(self.default_prompt_name, None)
-        elif prompt_name is not None:
-            logger.warning(
-                "Encode with either a `prompt`, a `prompt_name`, or neither, but not both. "
-                "Ignoring the `prompt_name` in favor of `prompt`."
-            )
+        prompt = self._resolve_prompt(prompt, prompt_name)
 
         if device is None:
             device = self.device
@@ -580,18 +542,11 @@ class SparseEncoder(BaseModel):
 
     def _get_model_config(self) -> dict[str, Any]:
         return super()._get_model_config() | {
-            "prompts": self.prompts,
-            "default_prompt_name": self.default_prompt_name,
             "similarity_fn_name": self._similarity_fn_name,
         }
 
     def _parse_model_config(self, model_config: dict[str, Any]) -> None:
-        # Only fill in prompts not already set by the user
-        for prompt_name, prompt_text in model_config.get("prompts", {}).items():
-            if prompt_name not in self.prompts or self.prompts[prompt_name] == "":
-                self.prompts[prompt_name] = prompt_text
-        if not self.default_prompt_name:
-            self.default_prompt_name = model_config.get("default_prompt_name", None)
+        super()._parse_model_config(model_config)
         if self._similarity_fn_name is None:
             self.similarity_fn_name = model_config.get("similarity_fn_name", None)
 
@@ -839,14 +794,6 @@ class SparseEncoder(BaseModel):
     )
     def get_sentence_embedding_dimension(self) -> int | None:
         return self.get_embedding_dimension()
-
-    def _update_default_model_id(self, model_card: str) -> str:
-        if self.model_card_data.model_id:
-            model_card = model_card.replace(
-                'model = SparseEncoder("sparse_encoder_model_id"',
-                f'model = SparseEncoder("{self.model_card_data.model_id}"',
-            )
-        return model_card
 
     def _load_default_modules(
         self,

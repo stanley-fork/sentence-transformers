@@ -106,6 +106,7 @@ class CrossEncoder(BaseModel, FitMixin):
 
     model_card_data_class = CrossEncoderModelCardData
     default_huggingface_organization: str | None = "cross-encoder"
+    _model_card_model_id_placeholder = "cross_encoder_model_id"
 
     @cross_encoder_init_args_decorator
     def __init__(
@@ -114,6 +115,8 @@ class CrossEncoder(BaseModel, FitMixin):
         *,
         modules: list[nn.Module] | None = None,
         device: str | None = None,
+        prompts: dict[str, str] | None = None,
+        default_prompt_name: str | None = None,
         cache_folder: str | None = None,
         trust_remote_code: bool = False,
         revision: str | None = None,
@@ -125,15 +128,11 @@ class CrossEncoder(BaseModel, FitMixin):
         model_card_data: CrossEncoderModelCardData | None = None,
         backend: Literal["torch", "onnx", "openvino"] = "torch",
         # CrossEncoder-specific args
-        prompts: dict[str, str] | None = None,
-        default_prompt_name: str | None = None,
         num_labels: int | None = None,
         max_length: int | None = None,
         activation_fn: Callable | None = None,
     ) -> None:
-        # CrossEncoder-specific attributes
-        self.prompts = prompts or {}
-        self.default_prompt_name = default_prompt_name
+        # Set before super().__init__() so _parse_model_config can check these
         self.activation_fn = None
 
         if num_labels is not None:
@@ -160,27 +159,10 @@ class CrossEncoder(BaseModel, FitMixin):
             config_kwargs=config_kwargs,
             model_card_data=model_card_data,
             backend=backend,
+            prompts=prompts,
+            default_prompt_name=default_prompt_name,
         )
         self.model_card_data: CrossEncoderModelCardData
-
-        # Validate and log prompts
-        if self.default_prompt_name is not None and self.default_prompt_name not in self.prompts:
-            raise ValueError(
-                f"Default prompt name '{self.default_prompt_name}' not found in the configured prompts "
-                f"dictionary with keys {list(self.prompts.keys())!r}."
-            )
-
-        if self.prompts and (non_empty_keys := [k for k, v in self.prompts.items() if v != ""]):
-            if len(non_empty_keys) == 1:
-                logger.info(f"1 prompt is loaded, with the key: {non_empty_keys[0]}")
-            else:
-                logger.info(f"{len(non_empty_keys)} prompts are loaded, with the keys: {non_empty_keys}")
-        if self.default_prompt_name:
-            logger.warning_once(
-                f"Default prompt name is set to '{self.default_prompt_name}'. "
-                "This prompt will be applied to all `predict()` calls, except if `predict()` "
-                "is called with `prompt` or `prompt_name` parameters."
-            )
 
         # If an activation function is provided, use it. Otherwise, load the default one/from backwards compatibility
         # if it wasn't set during super().__init__()
@@ -622,22 +604,7 @@ class CrossEncoder(BaseModel, FitMixin):
                 logger.getEffectiveLevel() == logging.INFO or logger.getEffectiveLevel() == logging.DEBUG
             )
 
-        if prompt is None:
-            if prompt_name is not None:
-                try:
-                    prompt = self.prompts[prompt_name]
-                except KeyError:
-                    raise ValueError(
-                        f"Prompt name '{prompt_name}' not found in the configured prompts dictionary with keys {list(self.prompts.keys())!r}."
-                    )
-            elif self.default_prompt_name is not None:
-                prompt = self.prompts.get(self.default_prompt_name, None)
-        else:
-            if prompt_name is not None:
-                logger.warning(
-                    "Encode with either a `prompt`, a `prompt_name`, or neither, but not both. "
-                    "Ignoring the `prompt_name` in favor of `prompt`."
-                )
+        prompt = self._resolve_prompt(prompt, prompt_name)
 
         # Here, device is either a single device string (e.g., "cuda:0", "cpu") for single-process encoding or None
         if device is None:
@@ -819,17 +786,11 @@ class CrossEncoder(BaseModel, FitMixin):
 
     def _get_model_config(self) -> dict[str, Any]:
         return super()._get_model_config() | {
-            "prompts": self.prompts,
-            "default_prompt_name": self.default_prompt_name,
             "activation_fn": fullname(self.activation_fn),
         }
 
     def _parse_model_config(self, model_config: dict[str, Any]) -> None:
-        for prompt_name, prompt_text in model_config.get("prompts", {}).items():
-            if prompt_name not in self.prompts or not self.prompts[prompt_name]:
-                self.prompts[prompt_name] = prompt_text
-        if not self.default_prompt_name:
-            self.default_prompt_name = model_config.get("default_prompt_name", None)
+        super()._parse_model_config(model_config)
         if "activation_fn" in model_config:
             activation_fn_path = model_config["activation_fn"]
             if activation_fn_path is not None:

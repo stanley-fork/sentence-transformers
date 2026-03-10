@@ -104,6 +104,7 @@ class SentenceTransformer(BaseModel, FitMixin):
 
     model_card_data_class = SentenceTransformerModelCardData
     default_huggingface_organization: str | None = "sentence-transformers"
+    _default_prompts: dict[str, str] = {"query": "", "document": ""}
 
     @deprecated_kwargs(tokenizer_kwargs="processor_kwargs")
     def __init__(
@@ -112,6 +113,8 @@ class SentenceTransformer(BaseModel, FitMixin):
         *,
         modules: list[nn.Module] | None = None,
         device: str | None = None,
+        prompts: dict[str, str] | None = None,
+        default_prompt_name: str | None = None,
         cache_folder: str | None = None,
         trust_remote_code: bool = False,
         revision: str | None = None,
@@ -124,19 +127,10 @@ class SentenceTransformer(BaseModel, FitMixin):
         model_card_data: SentenceTransformerModelCardData | None = None,
         backend: Literal["torch", "onnx", "openvino"] = "torch",
         # SentenceTransformer-specific args
-        prompts: dict[str, str] | None = None,
-        default_prompt_name: str | None = None,
         similarity_fn_name: Literal["cosine", "dot", "euclidean", "manhattan"] | SimilarityFunction | None = None,
         truncate_dim: int | None = None,
     ) -> None:
-        # Set default prompts for SentenceTransformer
-        default_prompts = {"query": "", "document": ""}
-        if prompts:
-            default_prompts.update(prompts)
-        prompts = default_prompts
-
-        self.prompts = prompts
-        self.default_prompt_name = default_prompt_name
+        # Set before super().__init__() so _parse_model_config can check these
         self.similarity_fn_name = similarity_fn_name
         self.truncate_dim = truncate_dim
 
@@ -155,27 +149,10 @@ class SentenceTransformer(BaseModel, FitMixin):
             config_kwargs=config_kwargs,
             model_card_data=model_card_data,
             backend=backend,
+            prompts=prompts,
+            default_prompt_name=default_prompt_name,
         )
         self.model_card_data: SentenceTransformerModelCardData
-
-        # Validate and log prompts
-        if self.default_prompt_name is not None and self.default_prompt_name not in self.prompts:
-            raise ValueError(
-                f"Default prompt name '{self.default_prompt_name}' not found in the configured prompts "
-                f"dictionary with keys {list(self.prompts.keys())!r}."
-            )
-
-        if non_empty_keys := [k for k, v in self.prompts.items() if v != ""]:
-            if len(non_empty_keys) == 1:
-                logger.info(f"1 prompt is loaded, with the key: {non_empty_keys[0]}")
-            else:
-                logger.info(f"{len(non_empty_keys)} prompts are loaded, with the keys: {non_empty_keys}")
-        if self.default_prompt_name:
-            logger.warning_once(
-                f"Default prompt name is set to '{self.default_prompt_name}'. "
-                "This prompt will be applied to all `encode()` calls, except if `encode()` "
-                "is called with `prompt` or `prompt_name` parameters."
-            )
 
         # Handle INSTRUCTOR models
         if model_name_or_path in ("hkunlp/instructor-base", "hkunlp/instructor-large", "hkunlp/instructor-xl"):
@@ -596,23 +573,7 @@ class SentenceTransformer(BaseModel, FitMixin):
                 embeddings = embeddings[0]
             return embeddings
 
-        # Handle prompts
-        if prompt is None:
-            if prompt_name is not None:
-                try:
-                    prompt = self.prompts[prompt_name]
-                except KeyError:
-                    raise ValueError(
-                        f"Prompt name '{prompt_name}' not found in the configured prompts dictionary with keys {list(self.prompts.keys())!r}."
-                    )
-            elif self.default_prompt_name is not None:
-                prompt = self.prompts.get(self.default_prompt_name, None)
-        else:
-            if prompt_name is not None:
-                logger.warning(
-                    "Encode with either a `prompt`, a `prompt_name`, or neither, but not both. "
-                    "Ignoring the `prompt_name` in favor of `prompt`."
-                )
+        prompt = self._resolve_prompt(prompt, prompt_name)
 
         # Set device
         if device is None:
@@ -986,15 +947,6 @@ class SentenceTransformer(BaseModel, FitMixin):
         with self.truncate_embeddings(truncate_dim):
             yield
 
-    def _update_default_model_id(self, model_card: str) -> str:
-        """Update the default model ID in the model card."""
-        if self.model_card_data.model_id:
-            model_card = model_card.replace(
-                'model = SentenceTransformer("sentence_transformers_model_id"',
-                f'model = SentenceTransformer("{self.model_card_data.model_id}"',
-            )
-        return model_card
-
     @staticmethod
     @deprecated("SentenceTransformer.load(...) is deprecated, use SentenceTransformer(...) instead.")
     def load(input_path: str) -> SentenceTransformer:
@@ -1062,12 +1014,7 @@ class SentenceTransformer(BaseModel, FitMixin):
         return modules, {}
 
     def _parse_model_config(self, model_config: dict[str, Any]) -> None:
-        # Only update prompts that aren't already set by the user or defaults
-        for prompt_name, prompt_text in model_config.get("prompts", {}).items():
-            if prompt_name not in self.prompts or not self.prompts[prompt_name]:
-                self.prompts[prompt_name] = prompt_text
-        if not self.default_prompt_name:
-            self.default_prompt_name = model_config.get("default_prompt_name", None)
+        super()._parse_model_config(model_config)
         if self._similarity_fn_name is None:
             self.similarity_fn_name = model_config.get("similarity_fn_name", None)
         if self.truncate_dim is None:
@@ -1075,8 +1022,6 @@ class SentenceTransformer(BaseModel, FitMixin):
 
     def _get_model_config(self) -> dict[str, Any]:
         config = super()._get_model_config() | {
-            "prompts": self.prompts,
-            "default_prompt_name": self.default_prompt_name,
             "similarity_fn_name": self.similarity_fn_name,
         }
         if self.truncate_dim is not None:
