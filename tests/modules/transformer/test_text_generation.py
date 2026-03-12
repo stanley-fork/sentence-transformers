@@ -30,26 +30,15 @@ from .conftest import (
     create_modality_pair_samples,
     create_modality_samples,
     load_transformer,
+    modify_processor_for_pairs,
 )
-from .test_sequence_classification import QUERY_DOCUMENT_CHAT_TEMPLATE
 
 EXPECT_FORWARD_FAIL = EXPECT_FORWARD_FAIL.copy() | {
     "marian": None,  # Checkpoint input embedding size is 99, but tokenizer vocab size is the full size
     "whisper": None,  # Checkpoint uses embeddings of size 50257, but tokenizer goes above 50350+
 }
 
-EXPECT_FORWARD_FAIL_PAIRS = {
-    "llama4": (  # Llama4 doesn't work nicely with the naive QUERY_DOCUMENT_CHAT_TEMPLATE, as that doesn't add image tokens
-        "image+image pair (url, url)",
-        "text+image pair (text, url)",
-        "image+text pair (url, text)",
-    ),
-    "gemma3": (  # Gemma3 doesn't work nicely with the naive QUERY_DOCUMENT_CHAT_TEMPLATE, as that doesn't add image tokens
-        "image+image pair (url, url)",
-        "text+image pair (text, url)",
-        "image+text pair (url, text)",
-    ),
-}
+EXPECT_FORWARD_FAIL_PAIRS = {}
 
 
 def _get_text_generation_archs() -> list[str]:
@@ -66,16 +55,13 @@ def _get_text_generation_archs() -> list[str]:
     ]
 
 
-@pytest.fixture(
-    params=_get_text_generation_archs(),
-    scope="session",
-)
+@pytest.fixture(params=_get_text_generation_archs(), scope="class")
 def arch(request):
     """Get the model architecture name for text-generation task."""
     return request.param
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="class")
 def arch_model(arch):
     model = load_transformer(arch, transformer_task="text-generation")
     return arch, model
@@ -189,7 +175,7 @@ class TestTextGenerationArchitectures:
                 model = model.to("cuda")
 
         if "message" in modalities:
-            model.processor.chat_template = QUERY_DOCUMENT_CHAT_TEMPLATE
+            modify_processor_for_pairs(model)
 
         test_pairs = create_modality_pair_samples(model, modalities, n=2)
 

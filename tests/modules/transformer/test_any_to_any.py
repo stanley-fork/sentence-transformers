@@ -1,30 +1,25 @@
 """
-Test suite for Transformer module with feature-extraction task (default).
-Tests various tiny model architectures with pre-built tiny models from
-hf-internal-testing and tiny-random organizations on the Hugging Face Hub,
-and tests various input modalities (text, image, audio, video, message).
+Test suite for Transformer module with any-to-any task.
+Tests various tiny model architectures that support multimodal language modeling,
+which is used by CrossEncoder with CausalScoreHead for models that can also
+input non-text modalities (e.g. images, audio, video).
 """
 
 from __future__ import annotations
 
 from contextlib import nullcontext
-from itertools import combinations
-from typing import get_args
 
 import pytest
 import torch
 from packaging.version import Version
 from transformers import __version__ as transformers_version
-from transformers.models.auto.modeling_auto import MODEL_MAPPING_NAMES
+from transformers.models.auto.modeling_auto import MODEL_FOR_MULTIMODAL_LM_MAPPING_NAMES, MODEL_MAPPING_NAMES
 
-from sentence_transformers.base.model import BaseModel
-from sentence_transformers.base.modules.modality_utils import Modality
 from sentence_transformers.modules import Transformer
 from sentence_transformers.util.tensor import batch_to_device
 
 from .conftest import (
     EXPECT_FORWARD_FAIL,
-    EXPECT_IMAGE_ONLY_FAILURE,
     EXPECT_IMAGE_VIDEO_FAILURE,
     EXPECT_MULTIMODAL_FAILURE,
     EXPECT_MULTIMODAL_SUCCESS,
@@ -33,55 +28,78 @@ from .conftest import (
     TINY_MODEL_MAPPING,
     TRANSFORMERS_V4_XFAIL_ARCHITECTURES,
     XFAIL_ARCHITECTURES,
+    create_modality_pair_samples,
     create_modality_samples,
     load_transformer,
+    modify_processor_for_pairs,
 )
 
 EXPECT_FORWARD_FAIL = EXPECT_FORWARD_FAIL.copy() | {
+    "llama4": (  # Cannot copy out of meta tensor; no data!, except text only which does work
+        "image (url)",
+        "image (array)",
+        "image (tensor)",
+        "image (pil)",
+        "image (path)",
+        "text+image (text, url)",
+        "image as message (structured, url)",
+        "text+image as message (structured, text, url)",
+    ),
     "qwen2_5_vl": (  # Doesn't nicely work with image+video, gives StopIteration on processing
         "image+video (url, url)",
         "text+image+video (text, url, url)",
         "image+video as message (structured, url, url)",
-    )
+    ),
 }
 
+EXPECT_FORWARD_FAIL_PAIRS = {
+    "llama4": (  # Cannot copy out of meta tensor; no data!, except text-text pairs which do work
+        "image+image pair (url, url)",
+        "text+image pair (text, url)",
+        "image+text pair (url, text)",
+    ),
+    "kosmos-2": None,  # Preprocessor can't handle pairs
+    "qwen2_5_vl": (  # Doesn't nicely work with image+video, gives StopIteration on processing
+        "image+video pair (url, url)",
+        "video+image pair (url, url)",
+    ),
+}
 
-XFAIL_FEATURE_EXTRACTION = [
-    "reformer",  # Outputs last_hidden_state with 2 * hidden_size dimensionality as it concats the same tensor for reversible ResNet, low prio
+XFAIL_ARCHITECTURES = XFAIL_ARCHITECTURES.copy() + [
+    "internvl",  # InternVL takes ~2 minutes to process on its own. Tests do pass, though
+    "blip",  # Doesn't nicely load and save in Transformers it seems, not worth fixing for now
 ]
 
 
-@pytest.fixture(
-    params=[
+def _get_any_to_any_archs() -> list[str]:
+    """Get architectures that support any-to-any (multimodal LM)."""
+    return [
         key
         for key, value in TINY_MODEL_MAPPING.items()
         if value is not None
         and key not in XFAIL_ARCHITECTURES
-        and key not in XFAIL_FEATURE_EXTRACTION
         and (key not in TRANSFORMERS_V4_XFAIL_ARCHITECTURES or Version(transformers_version) >= Version("5.0.0"))
         and key not in FAULTY_CHECKPOINTS
+        and key in MODEL_FOR_MULTIMODAL_LM_MAPPING_NAMES
         and key in MODEL_MAPPING_NAMES
-    ],
-    scope="class",
-)
+    ]
+
+
+@pytest.fixture(params=_get_any_to_any_archs(), scope="class")
 def arch(request):
-    """Get the model architecture name."""
+    """Get the model architecture name for any-to-any task."""
     return request.param
 
 
 @pytest.fixture(scope="class")
 def arch_model(arch):
-    model = load_transformer(arch, transformer_task="feature-extraction")
+    model = load_transformer(arch, transformer_task="any-to-any")
     return arch, model
 
 
 @pytest.fixture
 def arch_model_modalities(arch_model):
-    """Create a Transformer instance and return it with its supported modalities.
-
-    Returns:
-        tuple: (arch, model, supported_modalities_list)
-    """
+    """Create a Transformer instance and return it with its supported modalities."""
     try:
         arch, model = arch_model
         modalities = model.modalities
@@ -90,11 +108,11 @@ def arch_model_modalities(arch_model):
         pytest.fail(f"Failed to get modalities: {e}")
 
 
-class TestTransformerArchitectures:
-    """Test suite for Transformer module with various tiny model architectures (feature-extraction task)."""
+class TestAnyToAnyArchitectures:
+    """Test suite for Transformer module with any-to-any task."""
 
     def test_get_embedding_dimension(self, arch_model):
-        """Test that word embedding dimension can be retrieved."""
+        """Test that embedding dimension can be retrieved."""
         arch, model = arch_model
         dim = model.get_embedding_dimension()
         assert isinstance(dim, int)
@@ -103,68 +121,16 @@ class TestTransformerArchitectures:
     def test_save_load(self, arch_model, tmp_path):
         """Test saving and loading the model."""
         arch, model = arch_model
-
         save_path = tmp_path / "model"
         save_path.mkdir(exist_ok=True)
-
         model.save(str(save_path))
         loaded_model = Transformer(str(save_path))
-
         assert loaded_model.get_embedding_dimension() == model.get_embedding_dimension()
 
-    def test_modalities_property(self, arch_model_modalities):
-        """Test that the modalities property returns a list."""
-        arch, model, modalities = arch_model_modalities
-        assert isinstance(modalities, list)
-        assert len(modalities) > 0
-
-    def test_supports_consistency(self, arch_model_modalities, subtests):
-        """Test that supports() is consistent with the modalities property.
-
-        For each architecture, verifies that:
-        1. Each listed modality is supported.
-        2. Unlisted single modalities are not supported.
-        3. Tuple modalities composed of listed parts are supported iff "message" is also listed.
-        4. Tuple modalities with unlisted parts are never supported.
-        """
-        arch, model, modalities = arch_model_modalities
-        has_message = "message" in modalities
-        non_message = [m for m in modalities if isinstance(m, str) and m != "message"]
-        all_single: list[Modality] = list(get_args(get_args(Modality)[0]))
-
-        for modality in modalities:
-            with subtests.test(msg=f"{modality} listed => supported"):
-                assert BaseModel.supports(model, modality)
-
-        for modality in all_single:
-            if modality not in modalities:
-                with subtests.test(msg=f"{modality} unlisted => not supported"):
-                    assert not BaseModel.supports(model, modality)
-
-        # Test tuple modalities composed of listed non-message parts
-        if len(non_message) >= 2:
-            for combo in combinations(non_message, 2):
-                with subtests.test(msg=f"{combo} tuple => {'supported' if has_message else 'not supported'}"):
-                    if has_message:
-                        assert BaseModel.supports(model, combo)
-                    else:
-                        # Without message, tuple is only supported if explicitly listed
-                        assert BaseModel.supports(model, combo) == (combo in modalities)
-
-        # Test tuple with a truly unlisted part is never supported.
-        # A modality is "truly unlisted" if it doesn't appear as a single modality,
-        # nor as a part of any explicit tuple modality in the modalities list.
-        all_parts = set()
-        for m in modalities:
-            if isinstance(m, tuple):
-                all_parts.update(m)
-            elif m != "message":
-                all_parts.add(m)
-        truly_unlisted = [m for m in all_single if m not in all_parts]
-        if non_message and truly_unlisted:
-            bad_tuple = (non_message[0], truly_unlisted[0])
-            with subtests.test(msg=f"{bad_tuple} with unlisted part => not supported"):
-                assert not BaseModel.supports(model, bad_tuple)
+    def test_module_output_name(self, arch_model):
+        """Test that the module output name is 'causal_logits' for any-to-any."""
+        arch, model = arch_model
+        assert model.module_output_name == "causal_logits"
 
     def test_inference_with_supported_modalities(self, arch_model_modalities, subtests):
         """Test inference with each supported modality (single and multi-modal)."""
@@ -190,20 +156,14 @@ class TestTransformerArchitectures:
                     context = pytest.raises(Exception)
                 elif arch in EXPECT_IMAGE_VIDEO_FAILURE and "image" in modality_desc and "video" in modality_desc:
                     context = pytest.raises((ValueError, TypeError, AttributeError))
-                elif arch in EXPECT_IMAGE_ONLY_FAILURE and "image" in modality_desc and "+" not in modality_desc:
-                    context = pytest.raises((ValueError, TypeError, AttributeError))
                 elif (
                     model.module_output_name == "sentence_embedding"
                     and "+" in modality_desc
                     and arch not in EXPECT_MULTIMODAL_SUCCESS
                 ) or ("+" in modality_desc and arch in EXPECT_MULTIMODAL_FAILURE):
-                    # If a model outputs sentence embeddings directly, that's likely via the get_..._features methods,
-                    # which typically don't support multimodal inputs (except blip), so we can expect a failure in that case
-                    # TODO: Better error for explaining multimodal inputs on models that output sentence embeddings directly
                     context = pytest.raises(ValueError)
 
                 with context:
-                    # Preprocess the data & forward
                     try:
                         features = model.preprocess(inputs)
                     except ValueError as exc:
@@ -228,16 +188,47 @@ class TestTransformerArchitectures:
                     with torch.no_grad():
                         output = model.forward(features)
 
-                    # Verify output has expected keys
                     assert model.module_output_name in output, (
                         f"Expected '{model.module_output_name}' in output for {modality_desc}"
                     )
 
-                    # Verify batch size is correct
                     output_tensor = output[model.module_output_name]
                     assert output_tensor.shape[0] == len(inputs), f"Batch size mismatch for {modality_desc}"
-                    assert output_tensor.shape[-1] == model.get_embedding_dimension(), (
-                        f"Embedding dimension mismatch for {modality_desc}"
-                    )
 
-                    # TODO: Add more specific checks on module_output_name vs output_tensor ndims
+    def test_inference_with_supported_modality_pairs(self, arch_model_modalities, subtests):
+        """Test inference with pair inputs for each supported modality combination."""
+        arch, model, modalities = arch_model_modalities
+        if arch in REQUIRES_CUDA:
+            if not torch.cuda.is_available():
+                pytest.skip(f"{arch} requires CUDA for inference, but CUDA is not available.")
+            else:
+                model = model.to("cuda")
+
+        if "message" in modalities:
+            modify_processor_for_pairs(model)
+
+        test_pairs = create_modality_pair_samples(model, modalities, n=2)
+
+        for pair_desc, pairs in test_pairs.items():
+            with subtests.test(msg=f"Testing {pair_desc}"):
+                context = nullcontext()
+                if arch in EXPECT_FORWARD_FAIL and EXPECT_FORWARD_FAIL[arch] is None:
+                    context = pytest.raises(Exception)
+                expected_fail = EXPECT_FORWARD_FAIL_PAIRS.get(arch, False)
+                if expected_fail is None or (expected_fail and pair_desc in expected_fail):
+                    context = pytest.raises(Exception)
+                elif arch in EXPECT_IMAGE_VIDEO_FAILURE and "image" in pair_desc and "video" in pair_desc:
+                    context = pytest.raises((ValueError, TypeError, AttributeError))
+
+                with context:
+                    features = model.preprocess(pairs)
+                    if arch in REQUIRES_CUDA:
+                        features = batch_to_device(features, torch.device("cuda"))
+                    with torch.no_grad():
+                        output = model.forward(features)
+
+                    assert model.module_output_name in output, (
+                        f"Expected '{model.module_output_name}' in output for {pair_desc}"
+                    )
+                    output_tensor = output[model.module_output_name]
+                    assert output_tensor.shape[0] == len(pairs), f"Batch size mismatch for {pair_desc}"

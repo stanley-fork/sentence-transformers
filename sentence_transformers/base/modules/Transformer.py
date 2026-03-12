@@ -15,6 +15,7 @@ from transformers import (
     AutoModel,
     AutoModelForCausalLM,
     AutoModelForMaskedLM,
+    AutoModelForMultimodalLM,
     AutoModelForSequenceClassification,
     AutoProcessor,
     BlenderbotConfig,
@@ -95,7 +96,9 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING and is_peft_available():
     from peft import PeftConfig
 
-TransformerTask = Literal["feature-extraction", "sequence-classification", "text-generation", "fill-mask"]
+TransformerTask = Literal[
+    "feature-extraction", "sequence-classification", "text-generation", "any-to-any", "fill-mask"
+]
 
 
 class ModalityParams(TypedDict):
@@ -106,9 +109,10 @@ class ModalityParams(TypedDict):
 ModalityConfig = dict[Modality, ModalityParams]
 
 TRANSFORMER_TASK_TO_AUTO_MODEL: dict[TransformerTask, Any] = {
-    "feature-extraction": AutoModel,  # Used by SentenceTransformer
+    "feature-extraction": AutoModel,  # Used by SentenceTransformer, also covers "image-feature-extraction"
     "sequence-classification": AutoModelForSequenceClassification,  # Used by CrossEncoder
     "text-generation": AutoModelForCausalLM,  # Used by CrossEncoder
+    "any-to-any": AutoModelForMultimodalLM,  # Used by CrossEncoder, also covers "image-text-to-text"
     "fill-mask": AutoModelForMaskedLM,  # Used by SparseEncoder
 }
 
@@ -125,6 +129,10 @@ TRANSFORMER_TASK_DEFAULTS: dict[TransformerTask, tuple[ModalityConfig, str]] = {
         "scores",
     ),
     "text-generation": (
+        {"text": {"method": "forward", "method_output_name": "logits"}},
+        "causal_logits",
+    ),
+    "any-to-any": (
         {"text": {"method": "forward", "method_output_name": "logits"}},
         "causal_logits",
     ),
@@ -303,9 +311,43 @@ _TEXT_GENERATION_EDGE_CASES = {
     ),
 }
 
+_ANY_TO_ANY_EDGE_CASES = {
+    # Models supporting text+image without message format, but no image-only
+    "git": (
+        {
+            "text": {"method": "forward", "method_output_name": "logits"},
+            ("image", "text"): {"method": "forward", "method_output_name": "logits"},
+        },
+        "causal_logits",
+        False,
+    ),
+    # Only combined (image, text) input is supported, no text-only nor image-only
+    "blip": (
+        {("image", "text"): {"method": "forward", "method_output_name": "logits"}},
+        "causal_logits",
+        False,
+    ),
+    "blip-2": (
+        {("image", "text"): {"method": "forward", "method_output_name": "logits"}},
+        "causal_logits",
+        False,
+    ),
+    "kosmos-2": (
+        {("image", "text"): {"method": "forward", "method_output_name": "logits"}},
+        "causal_logits",
+        False,
+    ),
+    "paligemma": (
+        {("image", "text"): {"method": "forward", "method_output_name": "logits"}},
+        "causal_logits",
+        False,
+    ),
+}
+
 _EDGE_CASE_MODALITY_CONFIGS: dict[str, dict[str, tuple[ModalityConfig, str, bool]]] = {
     "feature-extraction": _FEATURE_EXTRACTION_EDGE_CASES,
     "text-generation": _TEXT_GENERATION_EDGE_CASES,
+    "any-to-any": _ANY_TO_ANY_EDGE_CASES,
     "fill-mask": _FILL_MASK_EDGE_CASES,
 }
 
@@ -337,12 +379,14 @@ class Transformer(InputModule):
     """Hugging Face AutoModel wrapper for generating embeddings, scores, or logits.
     Loads the correct class, e.g. BERT / RoBERTa etc.
 
+    TODO: Rewrite this docstring, needs to be more informational
+
     Args:
         model_name_or_path: Hugging Face model name or path
             (https://huggingface.co/models).
         transformer_task: The task to load the model for. Can be
             ``"feature-extraction"``, ``"sequence-classification"``,
-            ``"text-generation"``, or ``"fill-mask"``.
+            ``"text-generation"``, ``"any-to-any"``, or ``"fill-mask"``.
         model_kwargs: Keyword arguments forwarded to
             ``AutoModel.from_pretrained`` when loading the model.
         processor_kwargs: Keyword arguments forwarded to
@@ -394,7 +438,7 @@ class Transformer(InputModule):
         model_kwargs: dict[str, Any] | None = None,
         processor_kwargs: dict[str, Any] | None = None,
         config_kwargs: dict[str, Any] | None = None,
-        processing_kwargs: dict[str, dict[str, Any]] | None = None,
+        processing_kwargs: dict[str, dict[str, Any]] | None = None,  # TODO: Warn if unused kwargs provided
         backend: Literal["torch", "onnx", "openvino"] = "torch",
         modality_config: ModalityConfig | None = None,
         module_output_name: str | None = None,
@@ -955,7 +999,9 @@ class Transformer(InputModule):
     def _load_model(
         self,
         model_name_or_path: str,
-        transformer_task: Literal["feature-extraction", "sequence-classification", "text-generation", "fill-mask"],
+        transformer_task: Literal[
+            "feature-extraction", "sequence-classification", "text-generation", "any-to-any", "fill-mask"
+        ],
         config: PeftConfig | PretrainedConfig,
         backend: str,
         is_peft_model: bool,

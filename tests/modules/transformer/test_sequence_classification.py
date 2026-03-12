@@ -34,33 +34,14 @@ from .conftest import (
     create_modality_pair_samples,
     create_modality_samples,
     load_transformer,
+    modify_processor_for_pairs,
 )
-
-QUERY_DOCUMENT_CHAT_TEMPLATE = """\
-<|im_start|>system
-Judge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>
-<|im_start|>user
-<Instruct>: {{ messages | selectattr("role", "eq", "system") | map(attribute="content") | first | default("Given a web search query, retrieve relevant passages that answer the query") }}
-<Query>: {{ messages | selectattr("role", "eq", "query") | map(attribute="content") | first }}
-<Document>: {{ messages | selectattr("role", "eq", "document") | map(attribute="content") | first }}<|im_end|>
-<|im_start|>assistant
-<think>
-
-</think>"""
 
 # Architectures that fail specifically for sequence-classification
 # (beyond the general XFAIL_ARCHITECTURES)
 XFAIL_SEQUENCE_CLASSIFICATION = [
     "luke",  # The LUKE tokenize doesn't work conveniently with text pairs
 ]
-
-EXPECT_FORWARD_FAIL_PAIRS = {
-    "gemma3": (  # Gemma3 doesn't work nicely with the naive QUERY_DOCUMENT_CHAT_TEMPLATE, as that doesn't add image tokens
-        "image+image pair (url, url)",
-        "text+image pair (text, url)",
-        "image+text pair (url, text)",
-    ),
-}
 
 
 def _get_seq_cls_archs() -> list[str]:
@@ -78,16 +59,13 @@ def _get_seq_cls_archs() -> list[str]:
     ]
 
 
-@pytest.fixture(
-    params=_get_seq_cls_archs(),
-    scope="session",
-)
+@pytest.fixture(params=_get_seq_cls_archs(), scope="class")
 def arch(request):
     """Get the model architecture name for sequence-classification task."""
     return request.param
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="class")
 def arch_model(arch):
     model = load_transformer(arch, transformer_task="sequence-classification")
     return arch, model
@@ -203,9 +181,8 @@ class TestSequenceClassificationArchitectures:
             else:
                 model = model.to("cuda")
 
-        # Update the chat template to ensure that it handles the query-document format correctly
         if "message" in modalities:
-            model.processor.chat_template = QUERY_DOCUMENT_CHAT_TEMPLATE
+            modify_processor_for_pairs(model)
 
         test_pairs = create_modality_pair_samples(model, modalities, n=2)
 
@@ -213,9 +190,6 @@ class TestSequenceClassificationArchitectures:
             with subtests.test(msg=f"Testing {pair_desc}"):
                 context = nullcontext()
                 if arch in EXPECT_FORWARD_FAIL and EXPECT_FORWARD_FAIL[arch] is None:
-                    context = pytest.raises(Exception)
-                expected_fail = EXPECT_FORWARD_FAIL_PAIRS.get(arch, False)
-                if expected_fail is None or (expected_fail and pair_desc in expected_fail):
                     context = pytest.raises(Exception)
 
                 with context:

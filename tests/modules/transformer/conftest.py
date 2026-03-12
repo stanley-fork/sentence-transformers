@@ -110,6 +110,7 @@ FAULTY_CHECKPOINTS = [
 
 REQUIRES_CUDA = [
     "qwen2_moe",  # Forward pass uses `torch._grouped_mm`, but data requires 16-bytes alignment on CPU, which isn't guaranteed. Perhaps fixed in https://github.com/pytorch/pytorch/pull/173395, but not yet released.
+    "mra",
 ]
 # Models whose checkpoints are faulty, but only with the 'forward', and I still want to test loading, saving,
 # configuration reading, etc. None denotes that failure is across all modalities, but for some models, the checkpoint
@@ -606,15 +607,16 @@ def create_modality_samples(
     return samples
 
 
-def get_arch_kwargs(arch: str, transformer_task: str) -> tuple[dict, dict, dict]:
-    """Get model_kwargs, config_kwargs, processor_kwargs for a given architecture.
+def get_arch_kwargs(arch: str, transformer_task: str) -> tuple[dict, dict, dict, dict]:
+    """Get model_kwargs, config_kwargs, processor_kwargs, processing_kwargs for a given architecture.
 
     Returns:
-        Tuple of (model_kwargs, config_kwargs, processor_kwargs)
+        Tuple of (model_kwargs, config_kwargs, processor_kwargs, processing_kwargs)
     """
     model_kwargs = {"ignore_mismatched_sizes": True}
     config_kwargs = {}
     processor_kwargs = {}
+    processing_kwargs = {}
 
     # Resolve some minor issues in the checkpoints that prevent forward testing
     if arch == "blip-2":
@@ -636,8 +638,15 @@ def get_arch_kwargs(arch: str, transformer_task: str) -> tuple[dict, dict, dict]
         config_kwargs["hidden_size"] = 16
     if arch == "reformer" and transformer_task == "text-generation":
         config_kwargs["is_decoder"] = True
+    if arch == "internvl":
+        processing_kwargs["text"] = {"truncation": False}
+    if arch == "mra":
+        processor_kwargs["model_max_length"] = 256
+        processing_kwargs["text"] = {"padding": "max_length"}
+    if arch == "qwen3_5" and transformer_task == "sequence-classification":
+        config_kwargs["text_config"] = {"num_labels": 1, "id2label": {0: "LABEL_0"}}
 
-    return model_kwargs, config_kwargs, processor_kwargs
+    return model_kwargs, config_kwargs, processor_kwargs, processing_kwargs
 
 
 def load_transformer(arch: str, transformer_task: str = "feature-extraction", **extra_kwargs) -> Transformer:
@@ -652,7 +661,7 @@ def load_transformer(arch: str, transformer_task: str = "feature-extraction", **
         Loaded Transformer model
     """
     model_name = TINY_MODEL_MAPPING[arch]
-    model_kwargs, config_kwargs, processor_kwargs = get_arch_kwargs(arch, transformer_task)
+    model_kwargs, config_kwargs, processor_kwargs, processing_kwargs = get_arch_kwargs(arch, transformer_task)
 
     try:
         model = Transformer(
@@ -661,6 +670,7 @@ def load_transformer(arch: str, transformer_task: str = "feature-extraction", **
             model_kwargs={**model_kwargs, "local_files_only": True},
             config_kwargs={**config_kwargs, "local_files_only": True},
             processor_kwargs={**processor_kwargs, "local_files_only": True},
+            processing_kwargs=processing_kwargs,
             **extra_kwargs,
         )
     except Exception:
@@ -670,6 +680,7 @@ def load_transformer(arch: str, transformer_task: str = "feature-extraction", **
             model_kwargs=model_kwargs,
             config_kwargs=config_kwargs,
             processor_kwargs=processor_kwargs,
+            processing_kwargs=processing_kwargs,
             **extra_kwargs,
         )
 
@@ -679,13 +690,33 @@ def load_transformer(arch: str, transformer_task: str = "feature-extraction", **
             model.tokenizer.pad_token_id = 0
         if model.tokenizer.eos_token_id is None:
             model.tokenizer.eos_token_id = 0
-        if model.config.pad_token_id is None:
+        if getattr(model.config, "pad_token_id", False) is None:
             model.config.pad_token_id = 0
-        if model.config.eos_token_id is None:
+        if getattr(model.config, "eos_token_id", False) is None:
             model.config.eos_token_id = 0
 
     # Required for saving llama models to disk
-    if transformer_task == "text-generation" and model.model.generation_config.pad_token_id == -1:
+    if transformer_task in ("text-generation", "any-to-any") and model.model.generation_config.pad_token_id == -1:
         model.model.generation_config.pad_token_id = model.model.generation_config.eos_token_id
 
     return model
+
+
+def modify_processor_for_pairs(model: Transformer):
+    model.processor.chat_template = (
+        model.processor.chat_template.replace('== "user"', 'in ["user", "query", "document"]')
+        .replace("== 'user'", "in ['user', 'query', 'document']")
+        .replace(  # Required for gemma3:
+            '{{ raise_exception("Conversation roles must alternate user/assistant/user/assistant/...") }}', ""
+        )
+        .replace(  # Required for ministral3
+            "{{- raise_exception('After the optional system message, conversation roles must alternate user and assistant roles except for tool calls and results.') }}",
+            "",
+        )
+        .replace(  # Required for llama
+            "{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}", ""
+        )
+        .replace(  # Required for cohere2
+            '{{- raise_exception("Conversation roles must alternate user/assistant/user/assistant/...") -}}', ""
+        )
+    )

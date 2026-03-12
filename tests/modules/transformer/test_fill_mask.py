@@ -47,16 +47,13 @@ def _get_fill_mask_archs() -> list[str]:
     ]
 
 
-@pytest.fixture(
-    params=_get_fill_mask_archs(),
-    scope="session",
-)
+@pytest.fixture(params=_get_fill_mask_archs(), scope="class")
 def arch(request):
     """Get the model architecture name for fill-mask task."""
     return request.param
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="class")
 def arch_model(arch):
     model = load_transformer(arch, transformer_task="fill-mask")
     return arch, model
