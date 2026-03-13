@@ -162,6 +162,7 @@ EXPECT_MULTIMODAL_SUCCESS = [
 EXPECT_MULTIMODAL_FAILURE = [
     "blip-2",  # Custom case that outputs text or image separately as token_embeddings
     "sam3",  # Custom case that outputs text or image separately as token_embeddings
+    "flava",  # Custom case that outputs text or image separately as token_embeddings
 ]
 
 # Some architectures fail when combining image+video in one input, but support image and video separately, so we can

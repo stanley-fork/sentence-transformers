@@ -45,7 +45,6 @@ EXPECT_FORWARD_FAIL = EXPECT_FORWARD_FAIL.copy() | {
     )
 }
 
-
 XFAIL_FEATURE_EXTRACTION = [
     "reformer",  # Outputs last_hidden_state with 2 * hidden_size dimensionality as it concats the same tensor for reversible ResNet, low prio
 ]
@@ -240,4 +239,13 @@ class TestTransformerArchitectures:
                         f"Embedding dimension mismatch for {modality_desc}"
                     )
 
-                    # TODO: Add more specific checks on module_output_name vs output_tensor ndims
+                    # token_embeddings should be 3D (batch, seq_len, hidden_dim)
+                    # sentence_embedding should be 2D (batch, hidden_dim)
+                    if model.module_output_name == "token_embeddings":
+                        assert output_tensor.ndim == 3, (
+                            f"Expected 3D tensor for token_embeddings, got {output_tensor.ndim}D for {modality_desc}"
+                        )
+                    elif model.module_output_name == "sentence_embedding":
+                        assert output_tensor.ndim == 2, (
+                            f"Expected 2D tensor for sentence_embedding, got {output_tensor.ndim}D for {modality_desc}"
+                        )

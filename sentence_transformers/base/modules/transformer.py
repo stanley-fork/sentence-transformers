@@ -216,6 +216,14 @@ _FEATURE_EXTRACTION_EDGE_CASES: dict[str, tuple[ModalityConfig, str, bool]] = {
         "token_embeddings",
         True,
     ),
+    "flava": (
+        {
+            "text": {"method": "get_text_features", "method_output_name": "pooler_output"},
+            "image": {"method": "get_image_features", "method_output_name": "pooler_output"},
+        },
+        "token_embeddings",
+        True,
+    ),
     # Models supporting text+image without message format
     "git": (
         {
