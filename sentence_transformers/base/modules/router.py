@@ -12,7 +12,7 @@ except ImportError:
 from torch import Tensor, nn
 from transformers.utils import logging
 
-from sentence_transformers.base.modality import infer_batch_modality
+from sentence_transformers.base.modality import format_modality, infer_batch_modality
 from sentence_transformers.base.modality_types import MODALITY_TO_PROCESSOR_ARG, Modality, PairInput, SingleInput
 from sentence_transformers.base.modules.input_module import InputModule
 from sentence_transformers.base.modules.module import Module
@@ -334,9 +334,9 @@ class Router(InputModule):
             if modality is None:
                 routes.append(f"task={task!r}")
             elif task is None:
-                routes.append(f"modality={modality!r}")
+                routes.append(f"modality={format_modality(modality)!r}")
             else:
-                routes.append(f"(task={task!r}, modality={modality!r})")
+                routes.append(f"(task={task!r}, modality={format_modality(modality)!r})")
         if not routes:
             return ""
         elif len(routes) == 1:
@@ -405,7 +405,8 @@ class Router(InputModule):
                     "or set a default route in the `Router` module."
                 )
 
-            error_msg = f"Could not determine route for task={task!r}, modality={modality!r}. "
+            modality_display = format_modality(modality) if modality is not None else None
+            error_msg = f"Could not determine route for task={task!r}, modality={modality_display!r}. "
             error_msg += f"Available routes: {self._get_routes_string()}. "
             error_msg += "Consider specifying the `task` parameter in `model.encode`, or setting a default route in the `Router`."
             raise ValueError(error_msg)

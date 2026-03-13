@@ -475,3 +475,10 @@ def infer_batch_modality(
     """
     modalities = {infer_modality(sample) for sample in samples}
     return modalities.pop() if len(modalities) == 1 else "message"
+
+
+def format_modality(modality: Modality) -> str:
+    """Format a modality for display, e.g. ``("text", "image")`` becomes ``"text+image"``."""
+    if isinstance(modality, tuple):
+        return "+".join(modality)
+    return modality

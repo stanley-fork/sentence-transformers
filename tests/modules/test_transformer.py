@@ -704,14 +704,14 @@ class TestSerialization:
         assert isinstance(config["modality_config"], dict)
 
     def test_get_config_dict_tuple_keys_serialized(self, bert_tiny_transformer):
-        """Tuple modality keys should be serialized to comma-separated strings."""
+        """Tuple modality keys should be serialized to plus-separated strings."""
         model = bert_tiny_transformer
         model.modality_config[("image", "text")] = {
             "method": "forward",
             "method_output_name": "last_hidden_state",
         }
         config = model.get_config_dict()
-        assert "image,text" in config["modality_config"]
+        assert "image+text" in config["modality_config"]
 
     def test_repr(self, bert_tiny_transformer):
         r = repr(bert_tiny_transformer)
@@ -719,7 +719,7 @@ class TestSerialization:
         assert "architecture" in r
 
     def test_load_config_deserializes_tuple_keys(self, bert_tiny_transformer, tmp_path):
-        """load_config should deserialize comma-separated keys back to tuples."""
+        """load_config should deserialize plus-separated keys back to tuples."""
         model = bert_tiny_transformer
         save_dir = str(tmp_path / "model")
         model.modality_config[("image", "text")] = {

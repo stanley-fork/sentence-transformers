@@ -27,7 +27,7 @@ from transformers.dynamic_module_utils import get_class_from_dynamic_module, get
 
 from sentence_transformers import __version__
 from sentence_transformers.base.evaluation import SentenceEvaluator
-from sentence_transformers.base.modality import infer_batch_modality
+from sentence_transformers.base.modality import format_modality, infer_batch_modality
 from sentence_transformers.base.modality_types import Modality, PairInput, SingleInput
 from sentence_transformers.base.model_card import BaseModelCardData, generate_model_card
 from sentence_transformers.base.modules import Module, Router, Transformer
@@ -401,10 +401,17 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
                 pass
             else:
                 if not self.supports(modality):
-                    raise ValueError(
-                        f"Modality '{modality}' is not supported by {type(self[0]).__name__}. "
-                        f"Supported modalities: {self.modalities}"
+                    supported = ", ".join(format_modality(m) for m in self.modalities)
+                    message = (
+                        f"Modality '{format_modality(modality)}' is not supported by this {type(self).__name__} model. "
+                        f"Supported modalities: {supported}"
                     )
+                    if isinstance(modality, tuple) and all(part in self.modalities for part in modality):
+                        message += (
+                            f"\nThis model supports {' and '.join(modality)} individually, "
+                            "but not in the same input. Please encode each modality separately."
+                        )
+                    raise ValueError(message)
 
         # Backwards compatibility: fall back to preprocess/tokenize without prompt if the
         # input module doesn't accept it. Only the main path (preprocess with prompt) will

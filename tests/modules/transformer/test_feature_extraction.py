@@ -197,8 +197,9 @@ class TestTransformerArchitectures:
                     and arch not in EXPECT_MULTIMODAL_SUCCESS
                 ) or ("+" in modality_desc and arch in EXPECT_MULTIMODAL_FAILURE):
                     # If a model outputs sentence embeddings directly, that's likely via the get_..._features methods,
-                    # which typically don't support multimodal inputs (except blip), so we can expect a failure in that case
-                    # TODO: Better error for explaining multimodal inputs on models that output sentence embeddings directly
+                    # which typically don't support multimodal inputs (except blip), so we can expect a failure in that case.
+                    # BaseModel.preprocess already raises a clear ValueError via `self.supports(modality)` before
+                    # the Transformer module is invoked, so end users get a meaningful error message.
                     context = pytest.raises(ValueError)
 
                 with context:

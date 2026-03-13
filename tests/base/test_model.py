@@ -106,6 +106,28 @@ def test_preprocess_rejects_unsupported_modality(
         stsb_bert_tiny_model.preprocess(["dummy text"])
 
 
+def test_preprocess_rejects_multimodal_without_message_support(
+    stsb_bert_tiny_model: SentenceTransformer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """preprocess() should raise ValueError for combined modalities when the model supports
+    individual modalities (e.g. text and image) but not 'message' format.
+
+    This mirrors the behavior of architectures like blip-2, sam3, and flava that handle
+    text and image separately but cannot combine them in a single forward pass.
+    """
+    # Pretend the model supports text and image individually, but not message format
+    monkeypatch.setattr(type(stsb_bert_tiny_model), "modalities", property(lambda self: ["text", "image"]))
+    # Pretend the inferred modality is a combined tuple
+    monkeypatch.setattr(
+        "sentence_transformers.base.model.infer_batch_modality",
+        lambda inputs: ("text", "image"),
+    )
+    with pytest.raises(
+        ValueError, match=r"This model supports text and image individually, but not in the same input"
+    ):
+        stsb_bert_tiny_model.preprocess(["dummy text"])
+
+
 def test_preprocess_passes_supported_modality(stsb_bert_tiny_model: SentenceTransformer) -> None:
     """preprocess() should succeed with text inputs on a text-only model."""
     features = stsb_bert_tiny_model.preprocess(["Hello world"])

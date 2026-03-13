@@ -45,7 +45,7 @@ from transformers.utils.import_utils import is_peft_available
 from transformers.utils.peft_utils import find_adapter_config_file
 
 from sentence_transformers.backend import load_onnx_model, load_openvino_model
-from sentence_transformers.base.modality import InputFormatter
+from sentence_transformers.base.modality import InputFormatter, format_modality
 from sentence_transformers.base.modality_types import (
     MODALITY_TO_PROCESSOR_ARG,
     MessageFormat,
@@ -567,7 +567,7 @@ class Transformer(InputModule):
             for modality_key, params in modality_config.items():
                 if not isinstance(params, dict) or "method" not in params or "method_output_name" not in params:
                     raise ValueError(
-                        f"Invalid modality_config entry for '{modality_key}': each entry must be a dict with "
+                        f"Invalid modality_config entry for {modality_key!r}: each entry must be a dict with "
                         f"'method' and 'method_output_name' keys, but got {params!r}"
                     )
         else:
@@ -676,8 +676,8 @@ class Transformer(InputModule):
             modality, processor_inputs = self.input_formatter.batch_to_messages(modality, processor_inputs)
         elif modality not in self.modality_config:
             raise ValueError(
-                f"Modality '{modality}' is not supported by this model. "
-                f"Supported modalities: {sorted(self.modality_config.keys(), key=str)}"
+                f"Modality '{format_modality(modality)}' is not supported by this model. "
+                f"Supported modalities: {', '.join(format_modality(m) for m in sorted(self.modality_config.keys(), key=str))}"
             )
 
         # Incorporate prompt into inputs if applicable
@@ -904,7 +904,7 @@ class Transformer(InputModule):
 
         raise RuntimeError(
             f"Could not determine how to call processor of type {type(self.processor).__name__} "
-            f"for modality '{modality}'"
+            f"for modality '{format_modality(modality)}'"
         )
 
     def _process_chat_messages(
@@ -1459,12 +1459,11 @@ class Transformer(InputModule):
                 config[key].pop("trust_remote_code")
 
         if "modality_config" in config:
-            # Deserialize modality_config keys if they were serialized as comma-separated strings
+            # Deserialize modality_config keys: "+" separates tuple modalities (e.g. "image+text")
             deserialized_modality_config = {}
             for modality_key, params in config["modality_config"].items():
-                if "," in modality_key:
-                    modality_tuple = tuple(modality_key.split(","))
-                    deserialized_modality_config[modality_tuple] = params
+                if "+" in modality_key:
+                    deserialized_modality_config[tuple(modality_key.split("+"))] = params
                 else:
                     deserialized_modality_config[modality_key] = params
             config["modality_config"] = deserialized_modality_config
@@ -1491,16 +1490,11 @@ class Transformer(InputModule):
         return TRANSFORMER_TASK_DEFAULTS[config.get("transformer_task", "feature-extraction")]
 
     def get_config_dict(self) -> dict[str, Any]:
-        """Return the config dict for serialization, with tuple modality keys joined as comma-separated strings."""
+        """Return the config dict for serialization, with tuple modality keys joined as plus-separated strings."""
         config_dict = super().get_config_dict()
 
-        def serialize_tuple_keys(key):
-            if isinstance(key, tuple):
-                return ",".join(key)
-            return key
-
         config_dict["modality_config"] = {
-            serialize_tuple_keys(modality): params for modality, params in self.modality_config.items()
+            format_modality(modality): params for modality, params in self.modality_config.items()
         }
         if not self.processing_kwargs:
             config_dict.pop("processing_kwargs", None)
