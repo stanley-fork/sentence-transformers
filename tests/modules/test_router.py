@@ -279,7 +279,7 @@ def test_router_backwards_compatibility(static_embedding_model):
 
     with pytest.raises(
         ValueError,
-        match=r"Passing task types as dictionary keys \(e\.g\. \{'query': ...\}\) is no longer supported\. Instead, pass the inputs directly and use the `task` parameter",
+        match=r"Passing task types as dictionary keys \(e\.g\. \{'(query|document)': ...\}\) is no longer supported\. Instead, pass the inputs directly and use the `task` parameter",
     ):
         model.encode(
             [
