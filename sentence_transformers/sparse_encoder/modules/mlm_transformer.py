@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 class MLMTransformer(Transformer):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # TODO: This warning triggers on existing models, let's only warn if the user explicitly tries to instantiate MLMTransformer
+        # TODO: Remove that we'll remove this in a future release, we really don't have to
         logger.warning(
             "MLMTransformer is deprecated and will be removed in a future release. "
             "Please use sentence_transformers.sentence_transformer.modules.Transformer with "

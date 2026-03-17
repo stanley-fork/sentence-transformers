@@ -41,6 +41,9 @@ if TYPE_CHECKING:
     from sentence_transformers.base.model import BaseModel
     from sentence_transformers.base.trainer import BaseTrainer
 
+# TODO: Add image, video, and audio support in the model cards: training/evaluation dataset information,
+# widget examples, inference examples, and more.
+
 
 class BaseModelCardCallback(TrainerCallback):
     def __init__(self, default_args_dict: dict[str, Any]) -> None:
