@@ -212,7 +212,7 @@ class BaseTrainer(Trainer, ABC):
             processing_class = model.processor
 
         if data_collator is None:
-            data_collator = self.load_data_collator(model=model, args=args, processing_class=processing_class)
+            data_collator = self.get_data_collator(model=model, args=args, processing_class=processing_class)
 
         for dataset_name, dataset in zip(["train", "eval"], [train_dataset, eval_dataset]):
             if isinstance(dataset, IterableDataset) and dataset.column_names is None:
@@ -312,8 +312,7 @@ class BaseTrainer(Trainer, ABC):
             self.eval_dataset = self.preprocess_dataset(eval_dataset, dataset_name="eval")
         self.add_model_card_callback(default_args_dict)
 
-    # TODO: Normalize load_... and get_... (e.g. get_default_loss) naming
-    def load_data_collator(
+    def get_data_collator(
         self,
         model: BaseModel,
         args: BaseTrainingArguments,
