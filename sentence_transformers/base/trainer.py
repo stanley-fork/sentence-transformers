@@ -554,19 +554,23 @@ class BaseTrainer(Trainer, ABC):
             >>> torch.equal(labels, inputs["label"])
             True
         """
-        # All inputs ending with `_input_ids` (Transformers), `_sentence_embedding` (BoW), `_pixel_values` (CLIPModel)
-        # are considered to correspond to a feature
+        # All inputs ending with one of these suffixes are considered to correspond to a feature
+        feature_suffixes = (
+            "input_ids",  # text (Transformers)
+            "sentence_embedding",  # BoW
+            "pixel_values",  # image (CLIPModel, etc.)
+            "input_features",  # audio (Whisper, etc.)
+            "input_values",  # audio (Wav2Vec2, HuBERT, etc.)
+            "pixel_values_videos",  # video
+        )
         features = []
         for column in inputs:
-            if column.endswith("_input_ids"):  # text
-                prefix = column[: -len("input_ids")]
-            elif column.endswith("_sentence_embedding"):
-                prefix = column[: -len("sentence_embedding")]
-            elif column.endswith("_pixel_values"):  # image
-                prefix = column[: -len("pixel_values")]
-            elif column.endswith("_input_features"):  # audio
-                prefix = column[: -len("input_features")]
-            else:  # TODO: video
+            prefix = None
+            for suffix in feature_suffixes:
+                if column.endswith("_" + suffix):
+                    prefix = column[: -len(suffix)]
+                    break
+            if prefix is None:
                 continue
             features.append({key[len(prefix) :]: value for key, value in inputs.items() if key.startswith(prefix)})
         labels = inputs.get("label", None)
