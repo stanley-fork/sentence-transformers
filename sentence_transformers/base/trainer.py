@@ -281,7 +281,6 @@ class BaseTrainer(Trainer, ABC):
         ):
             os.environ.setdefault("TRACKIO_PROJECT", "sentence-transformers")
 
-        # TODO: Using a default loss doesn't make sense, delegate to subclasses
         if loss is None:
             loss = self.get_default_loss(self.model)
 
