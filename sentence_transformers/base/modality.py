@@ -26,7 +26,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-# TODO: Should we just enforce 'flat' if modalities is text only?
+# Override specific model types here when the heuristic in _infer_format gets them wrong.
 KNOWN_MODEL_TYPES_MESSAGE_FORMATS = {
     "apertus": "flat",
     "deepseek_v3": "flat",
