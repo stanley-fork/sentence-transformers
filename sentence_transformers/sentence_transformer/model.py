@@ -1063,3 +1063,33 @@ class SentenceTransformer(BaseModel, FitMixin):
             processor_kwargs,
             config_kwargs,
         )
+
+    def _push_to_hub_usage_tip(self, repo_id: str) -> str:
+        class_name = self.__class__.__name__
+        backend = self.get_backend()
+        return f"""\
+## Testing this pull request
+You can test this pull request before merging by loading the model from this PR with the `revision` argument:
+```python
+from sentence_transformers import {class_name}
+
+# TODO: Fill in the PR number
+pr_number = 2
+model = {class_name}(
+    "{repo_id}",
+    revision=f"refs/pr/{{pr_number}}",
+    backend="{backend}",
+)
+
+# Verify that everything works as expected
+embeddings = model.encode(["The weather is lovely today.", "It's so sunny outside!", "He drove to the stadium."])
+print(embeddings.shape)
+
+similarities = model.similarity(embeddings, embeddings)
+print(similarities)
+```
+
+---
+*This PR was auto-generated with \
+[`push_to_hub`](https://sbert.net/docs/package_reference/sentence_transformer/SentenceTransformer.html#sentence_transformers.SentenceTransformer.push_to_hub).*
+"""

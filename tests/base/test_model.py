@@ -465,15 +465,20 @@ def test_load_module_class_from_ref_code_revision(
     assert captured_kwargs.get("code_revision") == "v1.0"
 
 
-def _setup_hub_mocks(monkeypatch: pytest.MonkeyPatch) -> dict:
-    """Set up common mocks for push_to_hub tests. Returns a dict to capture upload_folder kwargs."""
-    mock_upload_folder_kwargs = {}
+def _setup_hub_mocks(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict | list]:
+    """Set up common mocks for push_to_hub tests.
+
+    Returns a dict with:
+      - "upload_folder": dict capturing the most recent upload_folder kwargs
+      - "create_branch_calls": list of (repo_id, branch) tuples
+    """
+    state = {"upload_folder": {}, "create_branch_calls": []}
 
     def mock_create_repo(self, repo_id, **kwargs):
         return RepoUrl(f"https://huggingface.co/{repo_id}")
 
     def mock_upload_folder(self, **kwargs):
-        mock_upload_folder_kwargs.update(kwargs)
+        state["upload_folder"].update(kwargs)
         commit_hash = "123456" if kwargs.get("revision") is None else "678901"
         commit_info_kwargs = {
             "commit_url": f"https://huggingface.co/{kwargs.get('repo_id')}/commit/{commit_hash}",
@@ -488,17 +493,19 @@ def _setup_hub_mocks(monkeypatch: pytest.MonkeyPatch) -> dict:
             return CommitInfo(**commit_info_kwargs, _endpoint=None)
 
     def mock_create_branch(self, repo_id, branch, revision=None, **kwargs):
+        state["create_branch_calls"].append((repo_id, branch))
         return None
 
     monkeypatch.setattr(HfApi, "create_repo", mock_create_repo)
     monkeypatch.setattr(HfApi, "upload_folder", mock_upload_folder)
     monkeypatch.setattr(HfApi, "create_branch", mock_create_branch)
 
-    return mock_upload_folder_kwargs
+    return state
 
 
 def test_push_to_hub_sparse_encoder(splade_bert_tiny_model: SparseEncoder, monkeypatch: pytest.MonkeyPatch) -> None:
-    mock_kwargs = _setup_hub_mocks(monkeypatch)
+    state = _setup_hub_mocks(monkeypatch)
+    mock_kwargs = state["upload_folder"]
     model = splade_bert_tiny_model
 
     url = model.push_to_hub("sparse-encoder-testing/splade-bert-tiny-nq")
@@ -513,6 +520,95 @@ def test_push_to_hub_sparse_encoder(splade_bert_tiny_model: SparseEncoder, monke
     url = model.push_to_hub("sparse-encoder-testing/splade-bert-tiny-nq", revision="test-branch")
     assert mock_kwargs["revision"] == "test-branch"
     assert url == "https://huggingface.co/sparse-encoder-testing/splade-bert-tiny-nq/commit/678901"
+
+
+def test_push_to_hub_create_pr_commit_description_sentence_transformer(
+    stsb_bert_tiny_model: SentenceTransformer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = _setup_hub_mocks(monkeypatch)
+    mock_kwargs = state["upload_folder"]
+    model = stsb_bert_tiny_model
+    repo_id = "sentence-transformers-testing/stsb-bert-tiny-safetensors"
+
+    model.push_to_hub(repo_id, create_pr=True)
+    desc = mock_kwargs["commit_description"]
+    assert "automatically generated to add SentenceTransformer compatibility" in desc
+    assert "push_to_hub" in desc
+    assert "Full Model Architecture" in desc
+    assert str(model) in desc
+    assert "model.encode(" in desc
+    assert "model.similarity(" in desc
+    assert "from sentence_transformers import SentenceTransformer" in desc
+    assert f'"{repo_id}"' in desc
+    assert 'backend="torch"' in desc
+
+
+def test_push_to_hub_create_pr_commit_description_cross_encoder(
+    reranker_bert_tiny_model: CrossEncoder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = _setup_hub_mocks(monkeypatch)
+    mock_kwargs = state["upload_folder"]
+    model = reranker_bert_tiny_model
+    repo_id = "cross-encoder-testing/reranker-bert-tiny"
+
+    model.push_to_hub(repo_id, create_pr=True)
+    desc = mock_kwargs["commit_description"]
+    assert "automatically generated to add CrossEncoder compatibility" in desc
+    assert "Full Model Architecture" in desc
+    assert "model.predict(" in desc
+    assert "model.rank(" in desc
+    assert "from sentence_transformers import CrossEncoder" in desc
+    assert f'"{repo_id}"' in desc
+
+
+def test_push_to_hub_create_pr_commit_description_sparse_encoder(
+    splade_bert_tiny_model: SparseEncoder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = _setup_hub_mocks(monkeypatch)
+    mock_kwargs = state["upload_folder"]
+    model = splade_bert_tiny_model
+    repo_id = "sparse-encoder-testing/splade-bert-tiny-nq"
+
+    model.push_to_hub(repo_id, create_pr=True)
+    desc = mock_kwargs["commit_description"]
+    assert "automatically generated to add SparseEncoder compatibility" in desc
+    assert "Full Model Architecture" in desc
+    assert "model.encode(" in desc
+    assert "model.similarity(" in desc
+    assert "from sentence_transformers import SparseEncoder" in desc
+    assert f'"{repo_id}"' in desc
+
+
+def test_push_to_hub_no_commit_description_without_create_pr(
+    stsb_bert_tiny_model: SentenceTransformer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = _setup_hub_mocks(monkeypatch)
+    mock_kwargs = state["upload_folder"]
+
+    stsb_bert_tiny_model.push_to_hub("test-org/test-model")
+    assert mock_kwargs["commit_description"] is None
+
+
+def test_push_to_hub_commit_message_includes_backend(
+    stsb_bert_tiny_model: SentenceTransformer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = _setup_hub_mocks(monkeypatch)
+    mock_kwargs = state["upload_folder"]
+
+    stsb_bert_tiny_model.push_to_hub("test-org/test-model")
+    assert mock_kwargs["commit_message"] == "Add new SentenceTransformer model"
+
+
+def test_push_to_hub_create_branch_on_revision(
+    stsb_bert_tiny_model: SentenceTransformer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = _setup_hub_mocks(monkeypatch)
+
+    stsb_bert_tiny_model.push_to_hub("test-org/test-model")
+    assert state["create_branch_calls"] == []
+
+    stsb_bert_tiny_model.push_to_hub("test-org/test-model", revision="my-branch")
+    assert ("test-org/test-model", "my-branch") in state["create_branch_calls"]
 
 
 def test_save_to_hub_deprecation_warning(

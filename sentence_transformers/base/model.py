@@ -819,38 +819,29 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         )
         repo_id = repo_url.repo_id  # Update the repo_id in case the old repo_id didn't contain a user or organization
         self.model_card_data.set_model_id(repo_id)
+        if revision is not None:
+            api.create_branch(repo_id=repo_id, branch=revision, exist_ok=True)
 
         if commit_message is None:
-            if "generated_from_trainer" in self.model_card_data.tags:
-                commit_message = "Add new model."
+            backend = self.get_backend()
+            if backend == "torch":
+                commit_message = f"Add new {self.__class__.__name__} model"
             else:
-                commit_message = f"Uploading {self.__class__.__name__} model."
+                commit_message = f"Add new {self.__class__.__name__} model with an {backend} backend"
 
         commit_description = ""
         if create_pr:
-            commit_description += (
-                "# Description\n\n"
-                + "Add model files with automated model upload from `push_to_hub`.\n\n"
-                + "Note that this PR might need to be manually reviewed and merged due to:"
-                + "1. Model card may need manual updates\n"
-                + "2. Training details may need verification\n"
-                + "3. Evaluation results may need validation\n\n"
-                + "---\n\n"
-            )
+            commit_description = f"""\
+Hello!
 
-            # Create a draft PR with space to add details
-            user_input_description = (
-                "<details>\n"
-                + "<summary>Click here to add additional details about this model</summary>\n\n"
-                + "### Model Details\n"
-                + "<!-- Add details about the model here -->\n\n"
-                + "### Training Details\n"
-                + "<!-- Add details about how the model was trained here -->\n\n"
-                + "### Evaluation Results\n"
-                + "<!-- Add evaluation results here -->\n\n"
-                + "</details>"
-            )
-            commit_description += user_input_description
+This pull request has been automatically generated to add {self.__class__.__name__} compatibility.
+
+## Full Model Architecture:
+```
+{self}
+```
+
+{self._push_to_hub_usage_tip(repo_id)}"""
 
         if local_model_path:
             folder_url = api.upload_folder(
@@ -1493,3 +1484,26 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         Return the list of keys to ignore when saving the model.
         """
         return []
+
+    def _push_to_hub_usage_tip(self, repo_id: str) -> str:
+        """Return a usage tip snippet for the push_to_hub PR description.
+
+        Subclasses can override this to provide model-type-specific example code.
+        """
+        class_name = self.__class__.__name__
+        backend = self.get_backend()
+        return f"""\
+## Testing this pull request
+You can test this pull request before merging by loading the model from this PR with the `revision` argument:
+```python
+from sentence_transformers import {class_name}
+
+# TODO: Fill in the PR number
+pr_number = 2
+model = {class_name}(
+    "{repo_id}",
+    revision=f"refs/pr/{{pr_number}}",
+    backend="{backend}",
+)
+```
+"""
