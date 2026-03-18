@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-# TODO: Is it okay to import from ... here? Or should we just require users to import from their full paths?
+# Re-exported from base so the deprecated path `sentence_transformers.evaluation` (which
+# redirects here) can still resolve `SentenceEvaluator` and `SequentialEvaluator` as attributes.
 from ...base.evaluation.evaluator import BaseEvaluator, SentenceEvaluator
 from ...base.evaluation.sequential import SequentialEvaluator
 from .binary_classification import BinaryClassificationEvaluator

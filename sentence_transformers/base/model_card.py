@@ -522,7 +522,7 @@ class BaseModelCardData(CardData):
     def set_evaluation_metrics(
         self, evaluator: BaseEvaluator, metrics: dict[str, Any], epoch: int = 0, step: int = 0
     ) -> None:
-        from sentence_transformers.sentence_transformer.evaluation import SequentialEvaluator
+        from sentence_transformers.base.evaluation import SequentialEvaluator
 
         self.eval_results_dict[evaluator] = copy(metrics)
 

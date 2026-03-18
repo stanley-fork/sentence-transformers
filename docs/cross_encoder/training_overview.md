@@ -856,7 +856,7 @@ The :class:`~sentence_transformers.cross_encoder.trainer.CrossEncoderTrainer` is
             CrossEncoderRerankingEvaluator,
         )
         from sentence_transformers.cross_encoder.losses import BinaryCrossEntropyLoss
-        from sentence_transformers.sentence_transformer.evaluation import SequentialEvaluator
+        from sentence_transformers.base.evaluation import SequentialEvaluator
         from sentence_transformers.util import mine_hard_negatives
 
         # Set the log level to INFO to get more information
