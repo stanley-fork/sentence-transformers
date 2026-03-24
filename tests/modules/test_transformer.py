@@ -419,6 +419,19 @@ class TestForward:
             result = model.forward(features)
         assert "all_layer_embeddings" in result
 
+    def test_list_method_output_name_hidden_states(self, bert_tiny_transformer):
+        """A list method_output_name like ["hidden_states", -1] should auto-enable output_hidden_states
+        and traverse the output path to return the correct hidden layer embedding."""
+        model = bert_tiny_transformer
+        model.model.config.output_hidden_states = False
+        model.modality_config["text"]["method_output_name"] = ["hidden_states", -1]
+        features = batch_to_device(model.preprocess(["test"]), model.model.device)
+        with torch.no_grad():
+            result = model.forward(features)
+        embedding = result[model.module_output_name]
+        assert embedding.ndim == 3
+        assert embedding.shape[-1] == model.config.hidden_size
+
 
 class TestGetEmbeddingDimension:
     def test_standard_hidden_size(self, bert_tiny_transformer):

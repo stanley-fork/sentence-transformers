@@ -873,6 +873,8 @@ class Transformer(InputModule):
         method_output_name = modality_params["method_output_name"]
         if isinstance(method_output_name, str):
             method_output_name = (method_output_name,)
+        elif isinstance(method_output_name, list):
+            method_output_name = tuple(method_output_name)
 
         # kwargs override features
         all_kwargs = {**features, **kwargs, "return_dict": True}
@@ -888,6 +890,10 @@ class Transformer(InputModule):
                 method_params = set(inspect.signature(model_method).parameters)
                 self._method_signature_cache[method_name] = method_params
             filtered_kwargs = {key: value for key, value in all_kwargs.items() if key in method_params}
+
+        # Auto-enable output_hidden_states when the output path traverses hidden_states
+        if method_output_name is not None and "hidden_states" in method_output_name:
+            filtered_kwargs["output_hidden_states"] = True
 
         model_output = model_method(**filtered_kwargs)
 
