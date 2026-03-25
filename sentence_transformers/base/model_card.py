@@ -44,11 +44,25 @@ if is_datasets_available():
         from datasets import Audio as AudioFeature
     except ImportError:
         AudioFeature = None
+    try:
+        from datasets import Video as VideoFeature
+    except ImportError:
+        VideoFeature = None
 
 try:
     from PIL.Image import Image as PILImage
 except ImportError:
     PILImage = None
+
+try:
+    from torchcodec.decoders import AudioDecoder
+except ImportError:
+    AudioDecoder = None  # type: ignore[assignment,misc]
+
+try:
+    from torchcodec.decoders import VideoDecoder
+except ImportError:
+    VideoDecoder = None  # type: ignore[assignment,misc]
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +225,7 @@ YAML_FIELDS = [
     "co2_eq_emissions",
     "base_model",
 ]
-IGNORED_FIELDS = ["model", "trainer", "eval_results_dict", "save_dir", "predict_example_display", "_asset_cache"]
+IGNORED_FIELDS = ["model", "trainer", "eval_results_dict", "save_dir", "usage_examples_display", "_asset_cache"]
 
 
 def get_versions() -> dict[str, Any]:
@@ -335,12 +349,13 @@ class BaseModelCardData(CardData):
     eval_results_dict: dict[BaseEvaluator, dict[str, Any]] | None = field(default_factory=dict, init=False)
     training_logs: list[dict[str, float]] = field(default_factory=list, init=False)
     widget: list[dict[str, str]] = field(default_factory=list, init=False)
-    predict_example: list | None = field(default=None, init=False)
-    predict_example_display: list | None = field(default=None, init=False, repr=False)
+    usage_examples: list | None = field(default=None, init=False)
+    usage_examples_display: list | None = field(default=None, init=False, repr=False)
     label_example_list: list[dict[str, str]] = field(default_factory=list, init=False)
     code_carbon_callback: CodeCarbonCallback | None = field(default=None, init=False)
     citations: dict[str, str] = field(default_factory=dict, init=False)
     best_model_step: int | None = field(default=None, init=False)
+    ir_model: bool | None = field(default=None, init=False, repr=False)
     datasets: list[str] = field(default_factory=list, init=False, repr=False)
     similarities: str | None = field(default=None, init=False, repr=False)
 
@@ -533,14 +548,14 @@ class BaseModelCardData(CardData):
                 else:
                     # If we have e.g. feature-extraction, we just want individual sentences
                     self.widget.append({"text": random.choice(sentences)})
-                self.predict_example = sentences[:4]
+                self.usage_examples = sentences[:4]
 
-        # If the model supports non-text modalities, set multimodal predict_example
+        # If the model supports non-text modalities, set multimodal usage_examples
         if self.model and any(m not in ("text", "message") for m in self.model.modalities):
-            self._set_multimodal_predict_example(dataset)
+            self._set_multimodal_usage_examples(dataset)
 
-    def _set_multimodal_predict_example(self, dataset: DatasetDict) -> None:
-        """Override :attr:`predict_example` with multimodal inputs when the model supports non-text modalities.
+    def _set_multimodal_usage_examples(self, dataset: DatasetDict) -> None:
+        """Override :attr:`usage_examples` with multimodal inputs when the model supports non-text modalities.
 
         Respects the distinction between models that support modalities independently (e.g. CLIP
         supports text OR image, but not combined) vs models that support combined modalities
@@ -555,7 +570,32 @@ class BaseModelCardData(CardData):
         if isinstance(sub_dataset, IterableDataset) or len(sub_dataset) == 0:
             return
 
-        # Classify dataset columns by modality (no Video feature in datasets library)
+        # For IR models, source the query from the first column and documents from the second column
+        if self.ir_model:
+            columns = [col for col in sub_dataset.column_names if col != "dataset_name"]
+            if len(columns) >= 2:
+                query_col = columns[0]
+                doc_col = columns[1]
+
+                query = sub_dataset[0][query_col]
+
+                documents = []
+                seen_hashes = set()
+                for i in range(min(100, len(sub_dataset))):
+                    value = sub_dataset[i][doc_col]
+                    content_hash = self._hash_asset(value) if not isinstance(value, str) else hash(value)
+                    if content_hash is not None and content_hash in seen_hashes:
+                        continue
+                    if content_hash is not None:
+                        seen_hashes.add(content_hash)
+                    documents.append(value)
+                    if len(documents) >= 3:
+                        break
+
+                self.usage_examples = [query] + documents
+                return
+
+        # Classify dataset columns by modality
         column_modalities: dict[str, str] = {}
         for column, feature in sub_dataset.features.items():
             if column == "dataset_name":
@@ -566,6 +606,8 @@ class BaseModelCardData(CardData):
                 column_modalities[column] = "image"
             elif AudioFeature and isinstance(feature, AudioFeature):
                 column_modalities[column] = "audio"
+            elif VideoFeature and isinstance(feature, VideoFeature):
+                column_modalities[column] = "video"
 
         available_modalities = set(column_modalities.values())
 
@@ -587,39 +629,50 @@ class BaseModelCardData(CardData):
                         break
 
             num_examples = min(3, len(sub_dataset))
-            predict_example = []
+            usage_examples = []
             for i in range(num_examples):
                 sample = sub_dataset[i]
-                predict_example.append({mod: sample[col] for mod, col in selected_columns.items()})
-            self.predict_example = predict_example
+                usage_examples.append({mod: sample[col] for mod, col in selected_columns.items()})
+            self.usage_examples = usage_examples
             return
 
         # No combined modality: pick the first non-text modality that both the model
-        # and the dataset support, and show single-modality examples.
+        # and the dataset support, and show deduplicated single-modality examples.
         for modality in self.model.modalities:
             if isinstance(modality, str) and modality not in ("text", "message") and modality in available_modalities:
                 col = next(c for c, m in column_modalities.items() if m == modality)
-                num_examples = min(3, len(sub_dataset))
-                self.predict_example = [sub_dataset[i][col] for i in range(num_examples)]
+                examples = []
+                seen_hashes = set()
+                for i in range(min(100, len(sub_dataset))):
+                    value = sub_dataset[i][col]
+                    content_hash = self._hash_asset(value) if not isinstance(value, str) else hash(value)
+                    if content_hash is not None and content_hash in seen_hashes:
+                        continue
+                    if content_hash is not None:
+                        seen_hashes.add(content_hash)
+                    examples.append(value)
+                    if len(examples) >= 3:
+                        break
+                self.usage_examples = examples
                 return
 
-    def save_predict_example_assets(self) -> None:
-        """Save non-text items in :attr:`predict_example` as files in an ``assets/`` subdirectory.
+    def save_usage_example_assets(self) -> None:
+        """Save non-text items in :attr:`usage_examples` as files in an ``assets/`` subdirectory.
 
-        After saving, :attr:`predict_example_display` is set with the same structure as
-        :attr:`predict_example` but with relative file paths (e.g. ``"assets/image_0.jpg"``)
+        After saving, :attr:`usage_examples_display` is set with the same structure as
+        :attr:`usage_examples` but with relative file paths (e.g. ``"assets/image_0.jpg"``)
         replacing raw data (PIL images, audio dicts, etc.). Text strings are kept as-is.
 
         This is called during save, after :meth:`run_usage_snippet` encodes the original data.
-        :meth:`generate_usage_snippet` then uses :attr:`predict_example_display` for the code block.
+        :meth:`generate_usage_snippet` then uses :attr:`usage_examples_display` for the code block.
         """
-        if not self.save_dir or not self.predict_example:
+        if not self.save_dir or not self.usage_examples:
             return
 
         # Quick check: if everything is already text (strings or list-of-strings), nothing to save
         if all(
             isinstance(item, str) or (isinstance(item, list) and all(isinstance(x, str) for x in item))
-            for item in self.predict_example
+            for item in self.usage_examples
         ):
             return
 
@@ -628,7 +681,7 @@ class BaseModelCardData(CardData):
         counter = 0
         display = []
 
-        for item in self.predict_example:
+        for item in self.usage_examples:
             if isinstance(item, str):
                 display.append(item)
             elif isinstance(item, list) and all(isinstance(x, str) for x in item):
@@ -654,7 +707,7 @@ class BaseModelCardData(CardData):
                     if isinstance(value, str):
                         display_dict[key] = value
                     else:
-                        rel_path = self._save_asset(value, assets_dir, counter, hint=key)
+                        rel_path = self._save_asset(value, assets_dir, counter)
                         if rel_path:
                             counter += 1
                             display_dict[key] = rel_path
@@ -670,7 +723,7 @@ class BaseModelCardData(CardData):
                 else:
                     display.append(f"<{type(item).__name__}>")
 
-        self.predict_example_display = display
+        self.usage_examples_display = display
 
     @staticmethod
     def _is_typed_media_dict(item: dict) -> bool:
@@ -680,6 +733,13 @@ class BaseModelCardData(CardData):
     @staticmethod
     def _hash_asset(value: Any) -> int | None:
         """Compute a content hash for an asset value, or None if the type is not supported."""
+        # AudioDecoder supports dict-like access but is not a dict
+        if AudioDecoder is not None and isinstance(value, AudioDecoder):
+            value = {"array": value["array"], "sampling_rate": value["sampling_rate"]}
+        # VideoDecoder: hash based on metadata (source path, duration, resolution)
+        if VideoDecoder is not None and isinstance(value, VideoDecoder):
+            m = value.metadata
+            return hash((getattr(m, "path", None), m.duration_seconds, m.width, m.height, m.num_frames))
         if PILImage and isinstance(value, PILImage):
             return hash((value.tobytes(), value.size, value.mode))
         if isinstance(value, dict) and "array" in value:
@@ -692,20 +752,43 @@ class BaseModelCardData(CardData):
                 return hash((array.tobytes(), array.shape, value.get("sampling_rate")))
         return None
 
-    def _save_asset(self, value: Any, assets_dir: str, idx: int, hint: str = "") -> str | None:
+    def _save_asset(self, value: Any, assets_dir: str, idx: int, prefix: str = "") -> str | None:
         """Save a non-text value to the assets directory, deduplicating by content hash.
+
+        Args:
+            prefix: Prepended to filenames, e.g. ``"example_"`` → ``"example_image_0.jpg"``.
 
         Returns the relative path (e.g. ``"assets/image_0.jpg"``) on success, or ``None`` on failure.
         """
+        # Compute hash before conversion so VideoDecoder/AudioDecoder hashing is consistent
         content_hash = self._hash_asset(value)
         if content_hash is not None and content_hash in self._asset_cache:
             return self._asset_cache[content_hash]
+
+        # AudioDecoder supports dict-like access but is not a dict
+        if AudioDecoder is not None and isinstance(value, AudioDecoder):
+            value = {"array": value["array"], "sampling_rate": value["sampling_rate"]}
+        # VideoDecoder: copy source file directly (avoids frame decoding issues) or decode
+        if VideoDecoder is not None and isinstance(value, VideoDecoder):
+            source_path = getattr(value.metadata, "path", None)
+            if source_path and os.path.isfile(source_path):
+                import shutil
+
+                ext = os.path.splitext(source_path)[1] or ".mp4"
+                filename = f"{prefix}video_{idx}{ext}"
+                rel_path = f"assets/{filename}"
+                os.makedirs(assets_dir, exist_ok=True)
+                shutil.copy2(source_path, os.path.join(assets_dir, filename))
+                if content_hash is not None:
+                    self._asset_cache[content_hash] = rel_path
+                return rel_path
+            value = self._video_decoder_to_dict(value)
 
         os.makedirs(assets_dir, exist_ok=True)
 
         # PIL Image
         if PILImage and isinstance(value, PILImage):
-            filename = f"image_{idx}.jpg"
+            filename = f"{prefix}image_{idx}.jpg"
             rel_path = f"assets/{filename}"
             value.convert("RGB").save(os.path.join(assets_dir, filename))
             if content_hash is not None:
@@ -717,7 +800,7 @@ class BaseModelCardData(CardData):
             try:
                 import soundfile as sf
 
-                filename = f"audio_{idx}.wav"
+                filename = f"{prefix}audio_{idx}.wav"
                 rel_path = f"assets/{filename}"
                 sf.write(os.path.join(assets_dir, filename), value["array"], value["sampling_rate"])
                 if content_hash is not None:
@@ -747,7 +830,7 @@ class BaseModelCardData(CardData):
                         array = array.clamp(0, 255).to(torch.uint8)
 
                 fps = value.get("video_metadata", {}).get("fps", 24)
-                filename = f"video_{idx}.mp4"
+                filename = f"{prefix}video_{idx}.mp4"
                 rel_path = f"assets/{filename}"
                 VideoEncoder(array.cpu(), frame_rate=fps).to_file(os.path.join(assets_dir, filename))
                 if content_hash is not None:
@@ -838,13 +921,6 @@ class BaseModelCardData(CardData):
 
         return [dataset_output]
 
-    def preprocess(self, text: str | list[str], **kwargs) -> dict[str, Any]:
-        try:
-            return self.model.preprocess(text, **kwargs)
-        except TypeError:
-            # Fallback for backwards compatibility with modules that don't yet support kwargs
-            return self.model.preprocess(text)
-
     def compute_dataset_metrics(
         self,
         dataset: Dataset | IterableDataset | None,
@@ -882,7 +958,7 @@ class BaseModelCardData(CardData):
                 subsection = dataset[:1000][column]
                 first = subsection[0]
                 if isinstance(first, str):
-                    tokenized = self.preprocess(subsection, task="document")
+                    tokenized = self.model.preprocess(subsection, task="document")
                     if isinstance(tokenized, (dict, UserDict)) and "attention_mask" in tokenized:
                         lengths = tokenized["attention_mask"].sum(dim=1).tolist()
                         suffix = "tokens"
@@ -946,11 +1022,14 @@ class BaseModelCardData(CardData):
                                 "max": f"{max(widths)}x{max(heights)} px",
                             },
                         }
-                    elif isinstance(first, dict) and "array" in first and "sampling_rate" in first:
+                    elif (isinstance(first, dict) and "array" in first and "sampling_rate" in first) or (
+                        AudioDecoder is not None and isinstance(first, AudioDecoder)
+                    ):
                         durations = [
                             len(d["array"]) / d["sampling_rate"]
                             for d in subsection
-                            if isinstance(d, dict) and "array" in d and "sampling_rate" in d
+                            if (isinstance(d, dict) and "array" in d and "sampling_rate" in d)
+                            or (AudioDecoder is not None and isinstance(d, AudioDecoder))
                         ]
                         if durations:
                             dataset_info["stats"][column] = {
@@ -964,6 +1043,34 @@ class BaseModelCardData(CardData):
                             }
                         else:
                             dataset_info["stats"][column] = {"dtype": "audio", "data": {}}
+                    elif VideoDecoder is not None and isinstance(first, VideoDecoder):
+                        durations = [
+                            v.metadata.duration_seconds
+                            for v in subsection
+                            if VideoDecoder is not None and isinstance(v, VideoDecoder)
+                        ]
+                        widths = [
+                            v.metadata.width
+                            for v in subsection
+                            if VideoDecoder is not None and isinstance(v, VideoDecoder)
+                        ]
+                        heights = [
+                            v.metadata.height
+                            for v in subsection
+                            if VideoDecoder is not None and isinstance(v, VideoDecoder)
+                        ]
+                        if durations:
+                            dataset_info["stats"][column] = {
+                                "dtype": "video",
+                                "data": {
+                                    "min": f"{min(durations):.2f}s, {min(widths)}x{min(heights)} px",
+                                    "mean": f"{sum(durations) / len(durations):.2f}s, {sum(widths) // len(widths)}x{sum(heights) // len(heights)} px",
+                                    "max": f"{max(durations):.2f}s, {max(widths)}x{max(heights)} px",
+                                    "fps": f"{first.metadata.average_fps:.0f}",
+                                },
+                            }
+                        else:
+                            dataset_info["stats"][column] = {"dtype": "video", "data": {}}
                     else:
                         dataset_info["stats"][column] = {"dtype": fullname(first), "data": {}}
 
@@ -1056,10 +1163,33 @@ class BaseModelCardData(CardData):
             if num_training_samples:
                 self.add_tags(f"dataset_size:{num_training_samples}")
 
+        # Try to detect IR model from dataset columns
+        if dataset and dataset_type == "train" and self.ir_model is None:
+            if isinstance(dataset, dict):
+                column_names = set(column for sub_dataset in dataset.values() for column in sub_dataset.column_names)
+            else:
+                column_names = set(dataset.column_names)
+            if {"query", "question"} & column_names:
+                self.ir_model = True
+
         return self.validate_datasets(dataset_metadata)
 
     def register_model(self, model: BaseModel) -> None:
         self.model = model
+
+        if self.ir_model is not None:
+            return
+
+        from sentence_transformers.base.modules import Router
+
+        if Router in [module.__class__ for module in model.children()]:
+            self.ir_model = True
+            return
+
+        for ir_prompt_name in ["query", "document", "passage", "corpus"]:
+            if ir_prompt_name in model.prompts and len(model.prompts[ir_prompt_name]) > 0:
+                self.ir_model = True
+                return
 
     def set_model_id(self, model_id: str) -> None:
         self.model_id = model_id
@@ -1281,41 +1411,108 @@ class BaseModelCardData(CardData):
             "explain_bold_in_eval": "**" in eval_lines,
         }
 
+    @staticmethod
+    def _video_decoder_to_dict(value: Any) -> dict[str, Any]:
+        """Convert a ``VideoDecoder`` to a ``VideoDict`` by extracting all frames.
+
+        Tries multiple strategies to extract frames:
+        1. ``get_frames_at`` on the original decoder (random-access batch)
+        2. Recreate a fresh decoder from source path and retry
+        3. Collect frames one-by-one via ``decoder[i]`` (random-access seek)
+        """
+        fps = value.metadata.average_fps
+        path = getattr(value.metadata, "path", None)
+
+        def _make_metadata(num_decoded_frames: int) -> dict[str, Any]:
+            return {
+                "fps": fps,
+                "total_num_frames": value.metadata.num_frames,
+                "frames_indices": list(range(num_decoded_frames)),
+            }
+
+        def _try_decode(decoder) -> dict[str, Any] | None:
+            n = len(decoder)
+            # Try batch decode with get_frames_at
+            for num_frames in (n, n - 1):
+                try:
+                    frames = decoder.get_frames_at(list(range(num_frames)))
+                    return {
+                        "array": frames.data,
+                        "video_metadata": _make_metadata(frames.data.shape[0]),
+                    }
+                except Exception:
+                    continue
+
+            # Fall back to collecting frames one-by-one via random access
+            collected = []
+            for i in range(n):
+                try:
+                    collected.append(decoder[i])
+                except Exception:
+                    break
+            if collected:
+                return {
+                    "array": torch.stack(collected),
+                    "video_metadata": _make_metadata(len(collected)),
+                }
+
+            return None
+
+        # Try the original decoder first
+        result = _try_decode(value)
+        if result is not None:
+            return result
+
+        # Recreate a fresh decoder from the source path
+        if path:
+            try:
+                fresh = VideoDecoder(path)
+                result = _try_decode(fresh)
+                if result is not None:
+                    return result
+            except Exception:
+                pass
+
+        raise RuntimeError("Could not decode frames from VideoDecoder")
+
+    @staticmethod
+    def _prepare_for_inference(value: Any) -> Any:
+        """Convert a value to a format suitable for model inference.
+
+        ``VideoDecoder`` objects are converted to a ``VideoDict`` via :meth:`_video_decoder_to_dict`.
+        All other values are returned as-is.
+        """
+        if VideoDecoder is not None and isinstance(value, VideoDecoder):
+            return BaseModelCardData._video_decoder_to_dict(value)
+        if isinstance(value, dict):
+            return {k: BaseModelCardData._prepare_for_inference(v) for k, v in value.items()}
+        return value
+
     def run_usage_snippet(self) -> dict[str, Any]:
-        if self.predict_example is None:
-            self.predict_example = [
+        if self.usage_examples is None:
+            self.usage_examples = [
                 "The weather is lovely today.",
                 "It's so sunny outside!",
                 "He drove to the stadium.",
             ]
 
-        if not self.generate_widget_examples:
-            return
-
-        self.predict_example = self.predict_example[:3]  # Limit to 3 examples for standard similarity
-        embeddings = self.model.encode(self.predict_example, convert_to_tensor=True, show_progress_bar=False)
-        similarity = self.model.similarity(embeddings, embeddings)
-
-        with torch._tensor_str.printoptions(precision=4, sci_mode=False):
-            self.similarities = "\n".join(f"# {line}" for line in str(similarity.cpu()).splitlines())
-
     def generate_usage_snippet(self) -> str:
         """Generate the Python usage code snippet for the model card.
 
         Returns the code block (including \\`\\`\\` delimiters) showing how to use this model.
-        Called after :meth:`run_usage_snippet` has set :attr:`predict_example` and :attr:`similarities`.
+        Called after :meth:`run_usage_snippet` has set :attr:`usage_examples` and :attr:`similarities`.
 
         Subclasses can override this to generate snippets for different model types (e.g. IR models,
         cross-encoders) or multimodal inputs.
         """
-        # Use display version (with file paths) if available, otherwise original predict_example
-        display = self.predict_example_display or self.predict_example
+        # Use display version (with file paths) if available, otherwise original usage_examples
+        display = self.usage_examples_display or self.usage_examples
         if not display:
             return self._generate_text_snippet(display)
 
-        # Check the *original* predict_example for modality detection, since display converts
+        # Check the *original* usage_examples for modality detection, since display converts
         # non-text items (PIL images, audio dicts, etc.) to file path strings.
-        source = self.predict_example or display
+        source = self.usage_examples or display
         has_non_text = any(not isinstance(item, (str, list)) for item in source)
         if has_non_text:
             return self._generate_non_text_snippet(display)
@@ -1431,62 +1628,60 @@ class BaseModelCardData(CardData):
     def _format_and_save_example(self, value: Any, counter: int) -> tuple[str, int]:
         """Format a dataset example value for the model card table, saving non-text values as assets.
 
-        When :attr:`save_dir` is set, PIL images are saved to ``assets/`` and rendered inline via
-        ``<img>`` tags. Audio is saved as ``.wav`` and linked. Otherwise falls back to text placeholders.
+        Delegates the actual file I/O to :meth:`_save_asset` and wraps the resulting path in the
+        appropriate HTML tag via :meth:`_example_asset_html`.
 
         Returns:
             A tuple of ``(html_cell_content, new_counter)``.
         """
-        if PILImage and isinstance(value, PILImage):
-            if self.save_dir:
-                content_hash = self._hash_asset(value)
-                if content_hash is not None and content_hash in self._asset_cache:
-                    rel_path = self._asset_cache[content_hash]
-                    return f'<img src="{rel_path}" width="200">', counter
-                assets_dir = os.path.join(self.save_dir, "assets")
-                os.makedirs(assets_dir, exist_ok=True)
-                filename = f"example_image_{counter}.jpg"
-                rel_path = f"assets/{filename}"
-                value.convert("RGB").save(os.path.join(assets_dir, filename))
-                if content_hash is not None:
-                    self._asset_cache[content_hash] = rel_path
-                return f'<img src="{rel_path}" width="200">', counter + 1
+        is_media = (
+            (PILImage and isinstance(value, PILImage))
+            or (AudioDecoder is not None and isinstance(value, AudioDecoder))
+            or (isinstance(value, dict) and "array" in value and "sampling_rate" in value)
+            or (VideoDecoder is not None and isinstance(value, VideoDecoder))
+        )
+        if not is_media or not self.save_dir:
             return f"<code>{self._format_example_value(value)}</code>", counter
 
-        if isinstance(value, dict) and "array" in value and "sampling_rate" in value:
-            if self.save_dir:
-                try:
-                    import soundfile as sf
+        # Check cache — cached assets must not increment the counter
+        content_hash = self._hash_asset(value)
+        if content_hash is not None and content_hash in self._asset_cache:
+            return self._example_asset_html(value, self._asset_cache[content_hash]), counter
 
-                    content_hash = self._hash_asset(value)
-                    if content_hash is not None and content_hash in self._asset_cache:
-                        rel_path = self._asset_cache[content_hash]
-                        duration = len(value["array"]) / value["sampling_rate"]
-                        return (
-                            f'<audio controls src="{rel_path}"><code>&lt;audio {duration:.2f}s&gt;</code></audio>',
-                            counter,
-                        )
-                    assets_dir = os.path.join(self.save_dir, "assets")
-                    os.makedirs(assets_dir, exist_ok=True)
-                    filename = f"example_audio_{counter}.wav"
-                    rel_path = f"assets/{filename}"
-                    sf.write(os.path.join(assets_dir, filename), value["array"], value["sampling_rate"])
-                    duration = len(value["array"]) / value["sampling_rate"]
-                    if content_hash is not None:
-                        self._asset_cache[content_hash] = rel_path
-                    return (
-                        f'<audio controls src="{rel_path}"><code>&lt;audio {duration:.2f}s&gt;</code></audio>',
-                        counter + 1,
-                    )
-                except Exception:
-                    pass
-            return f"<code>{self._format_example_value(value)}</code>", counter
+        assets_dir = os.path.join(self.save_dir, "assets")
+        rel_path = self._save_asset(value, assets_dir, counter, prefix="example_")
+        if rel_path:
+            return self._example_asset_html(value, rel_path), counter + 1
 
         return f"<code>{self._format_example_value(value)}</code>", counter
+
+    def _example_asset_html(self, value: Any, rel_path: str) -> str:
+        """Generate an inline HTML tag for a saved example asset."""
+        if PILImage and isinstance(value, PILImage):
+            return f'<img src="{rel_path}" width="200">'
+        # AudioDecoder supports dict-like access, so both AudioDecoder and audio dicts work here
+        if (AudioDecoder is not None and isinstance(value, AudioDecoder)) or (
+            isinstance(value, dict) and "array" in value and "sampling_rate" in value
+        ):
+            duration = len(value["array"]) / value["sampling_rate"]
+            return f'<audio controls src="{rel_path}"><code>&lt;audio {duration:.2f}s&gt;</code></audio>'
+        if VideoDecoder is not None and isinstance(value, VideoDecoder):
+            m = value.metadata
+            return (
+                f'<video controls width="200" src="{rel_path}">'
+                f"<code>&lt;video {m.duration_seconds:.2f}s&gt;</code></video>"
+            )
+        return f"<code>{self._format_example_value(value)}</code>"
 
     @staticmethod
     def _format_example_value(value: Any) -> str:
         """Format a dataset example value for the model card examples table."""
+        # AudioDecoder supports dict-like access but is not a dict
+        if AudioDecoder is not None and isinstance(value, AudioDecoder):
+            value = {"array": value["array"], "sampling_rate": value["sampling_rate"]}
+        if VideoDecoder is not None and isinstance(value, VideoDecoder):
+            m = value.metadata
+            return f"&lt;video {m.duration_seconds:.2f}s {m.width}x{m.height} @ {m.average_fps:.0f}fps&gt;"
         if PILImage and isinstance(value, PILImage):
             return f"&lt;image {value.width}x{value.height}&gt;"
         if isinstance(value, dict) and "array" in value and "sampling_rate" in value:
@@ -1590,9 +1785,9 @@ class BaseModelCardData(CardData):
         # Must run after run_usage_snippet() (which encodes the original data) and before
         # generate_usage_snippet() (which needs the file paths).
         try:
-            self.save_predict_example_assets()
+            self.save_usage_example_assets()
         except Exception as exc:
-            logger.warning(f"Error while saving predict example assets: {exc}")
+            logger.warning(f"Error while saving usage example assets: {exc}")
 
         # Re-render dataset example tables now that save_dir is available for asset saving.
         # The tables were first rendered during Trainer init (compute_dataset_metrics) when
@@ -1663,4 +1858,13 @@ def generate_model_card(model: BaseModel) -> str:
     model_card = ModelCard.from_template(
         card_data=model.model_card_data, template_path=model.model_card_data.template_path, hf_emoji="🤗"
     )
-    return model_card.content
+    content = model_card.content
+
+    # Replace relative asset paths with absolute Hub URLs so that images, audio, and
+    # video files render correctly when the README is viewed on the Hugging Face Hub.
+    model_id = getattr(model.model_card_data, "model_id", None)
+    if model_id:
+        base_url = f"https://huggingface.co/{model_id}/resolve/main/"
+        content = content.replace('src="assets/', f'src="{base_url}assets/')
+
+    return content

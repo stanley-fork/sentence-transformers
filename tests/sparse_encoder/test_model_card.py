@@ -250,7 +250,7 @@ class TestGenerateUsageSnippetSparseEncoder:
 
     def test_sparse_encoder_class_name(self) -> None:
         data = SparseEncoderModelCardData()
-        data.predict_example = ["A", "B"]
+        data.usage_examples = ["A", "B"]
         data.similarities = None
         data.model = None
         snippet = data.generate_usage_snippet()
@@ -261,7 +261,7 @@ class TestGenerateUsageSnippetSparseEncoder:
 
     def test_sparse_encoder_custom_model_id(self) -> None:
         data = SparseEncoderModelCardData(model_id="my-org/my-sparse-model")
-        data.predict_example = ["test"]
+        data.usage_examples = ["test"]
         data.similarities = None
         data.model = None
         snippet = data.generate_usage_snippet()

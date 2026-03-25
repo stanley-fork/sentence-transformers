@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
@@ -8,8 +9,18 @@ from sentence_transformers import SentenceTransformer, SentenceTransformerTraine
 from sentence_transformers.base.model_card import generate_model_card
 from sentence_transformers.util import is_datasets_available, is_training_available
 
+try:
+    from PIL import Image as PILModule
+except ImportError:
+    PILModule = None
+
 if is_datasets_available():
     from datasets import Dataset, DatasetDict
+
+    try:
+        from datasets import Image as ImageFeature
+    except ImportError:
+        ImageFeature = None
 
 if not is_training_available():
     pytest.skip(
@@ -148,8 +159,8 @@ def test_model_card_base(
 
 def _reset_for_snippet(model: SentenceTransformer) -> None:
     """Reset model_card_data fields to ensure a clean snippet test."""
-    model.model_card_data.predict_example = None
-    model.model_card_data.predict_example_display = None
+    model.model_card_data.usage_examples = None
+    model.model_card_data.usage_examples_display = None
     model.model_card_data.similarities = None
     model.model_card_data.ir_model = None
 
@@ -161,7 +172,7 @@ class TestGenerateUsageSnippetIR:
         model = stsb_bert_tiny_model
         _reset_for_snippet(model)
         model.model_card_data.ir_model = True
-        model.model_card_data.predict_example = ["query?", "doc A", "doc B"]
+        model.model_card_data.usage_examples = ["query?", "doc A", "doc B"]
         snippet = model.model_card_data.generate_usage_snippet()
 
         assert "queries = [" in snippet
@@ -185,7 +196,7 @@ class TestGenerateUsageSnippetIR:
         model = stsb_bert_tiny_model
         _reset_for_snippet(model)
         model.model_card_data.ir_model = True
-        model.model_card_data.predict_example = ["q", "d1", "d2", "d3"]
+        model.model_card_data.usage_examples = ["q", "d1", "d2", "d3"]
         dim = model.get_embedding_dimension()
         snippet = model.model_card_data.generate_usage_snippet()
 
@@ -196,7 +207,7 @@ class TestGenerateUsageSnippetIR:
         model = stsb_bert_tiny_model
         _reset_for_snippet(model)
         model.model_card_data.ir_model = True
-        model.model_card_data.predict_example = ["q", "d1"]
+        model.model_card_data.usage_examples = ["q", "d1"]
         model.model_card_data.similarities = "# tensor([[0.42]])"
         snippet = model.model_card_data.generate_usage_snippet()
 
@@ -207,23 +218,118 @@ class TestGenerateUsageSnippetIR:
         """When ir_model is None, SentenceTransformerModelCardData uses the base snippet."""
         model = stsb_bert_tiny_model
         _reset_for_snippet(model)
-        model.model_card_data.predict_example = ["A", "B"]
+        model.model_card_data.usage_examples = ["A", "B"]
         snippet = model.model_card_data.generate_usage_snippet()
 
         assert "sentences = [" in snippet
         assert "encode_query" not in snippet
 
     def test_display_precedence(self, stsb_bert_tiny_model: SentenceTransformer) -> None:
-        """predict_example_display takes precedence over predict_example for rendering."""
+        """usage_examples_display takes precedence over usage_examples for rendering."""
         model = stsb_bert_tiny_model
         _reset_for_snippet(model)
-        model.model_card_data.predict_example = ["original A", "original B"]
-        model.model_card_data.predict_example_display = ["display A", "display B"]
+        model.model_card_data.usage_examples = ["original A", "original B"]
+        model.model_card_data.usage_examples_display = ["display A", "display B"]
         snippet = model.model_card_data.generate_usage_snippet()
 
         assert "'display A'" in snippet
         assert "'display B'" in snippet
         assert "original" not in snippet
+
+
+def _make_pil_image(width: int = 64, height: int = 64) -> PILModule.Image:
+    """Create a small dummy PIL image."""
+    return PILModule.new("RGB", (width, height), color=(255, 0, 0))
+
+
+@pytest.mark.skipif(
+    PILModule is None or not is_datasets_available() or ImageFeature is None,
+    reason="PIL, datasets, or datasets.Image not available",
+)
+class TestSetMultimodalPredictExampleIR:
+    """Test multimodal usage_examples for IR models sources query and documents from different columns."""
+
+    def test_ir_cross_column_sourcing(self, stsb_bert_tiny_model: SentenceTransformer) -> None:
+        """IR model should source query from first column and documents from second column."""
+        model = stsb_bert_tiny_model
+        _reset_for_snippet(model)
+        model.model_card_data.ir_model = True
+
+        images = [_make_pil_image(w, w) for w in (32, 48, 64, 80, 96)]
+        ds = Dataset.from_dict(
+            {
+                "query": [f"query {i}" for i in range(5)],
+                "image": images,
+            }
+        )
+        ds = ds.cast_column("image", ImageFeature())
+        dd = DatasetDict(eval=ds)
+
+        with patch.object(type(model), "modalities", new_callable=PropertyMock, return_value=["text", "image"]):
+            model.model_card_data._set_multimodal_usage_examples(dd)
+
+        examples = model.model_card_data.usage_examples
+        assert examples is not None
+        # First item should be text (from query column), rest should be images (from image column)
+        assert isinstance(examples[0], str)
+        assert examples[0] == "query 0"
+        assert len(examples) == 4  # 1 query + 3 documents
+        for img in examples[1:]:
+            assert isinstance(img, PILModule.Image)
+
+    def test_ir_cross_column_deduplicates_documents(self, stsb_bert_tiny_model: SentenceTransformer) -> None:
+        """IR model should deduplicate documents from the second column."""
+        model = stsb_bert_tiny_model
+        _reset_for_snippet(model)
+        model.model_card_data.ir_model = True
+
+        same_image = _make_pil_image(64, 64)
+        # First 3 images are identical, then 3 distinct images
+        images = [same_image.copy() for _ in range(3)] + [_make_pil_image(w, w) for w in (32, 48, 96)]
+        ds = Dataset.from_dict(
+            {
+                "query": [f"query {i}" for i in range(6)],
+                "image": images,
+            }
+        )
+        ds = ds.cast_column("image", ImageFeature())
+        dd = DatasetDict(eval=ds)
+
+        with patch.object(type(model), "modalities", new_callable=PropertyMock, return_value=["text", "image"]):
+            model.model_card_data._set_multimodal_usage_examples(dd)
+
+        examples = model.model_card_data.usage_examples
+        assert examples is not None
+        assert isinstance(examples[0], str)
+        # Documents should be deduplicated: 3 unique images out of 6
+        documents = examples[1:]
+        assert len(documents) == 3
+        sizes = {img.size for img in documents}
+        assert len(sizes) == 3
+
+    def test_non_ir_delegates_to_base(self, stsb_bert_tiny_model: SentenceTransformer) -> None:
+        """Non-IR model falls through to the base implementation (single-modality examples)."""
+        model = stsb_bert_tiny_model
+        _reset_for_snippet(model)
+        model.model_card_data.ir_model = None
+
+        images = [_make_pil_image(w, w) for w in (32, 48, 64, 80, 96)]
+        ds = Dataset.from_dict(
+            {
+                "query": [f"query {i}" for i in range(5)],
+                "image": images,
+            }
+        )
+        ds = ds.cast_column("image", ImageFeature())
+        dd = DatasetDict(eval=ds)
+
+        with patch.object(type(model), "modalities", new_callable=PropertyMock, return_value=["text", "image"]):
+            model.model_card_data._set_multimodal_usage_examples(dd)
+
+        examples = model.model_card_data.usage_examples
+        assert examples is not None
+        # Base implementation picks single non-text modality: all images, no text
+        assert all(isinstance(item, PILModule.Image) for item in examples)
 
 
 def test_model_card_set_transform(stsb_bert_tiny_model: SentenceTransformer, dummy_dataset: Dataset) -> None:

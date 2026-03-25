@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import pytest
 
+from sentence_transformers.base.model_card import generate_model_card
 from sentence_transformers.cross_encoder import CrossEncoder, CrossEncoderTrainer
-from sentence_transformers.cross_encoder.model_card import CrossEncoderModelCardData, generate_model_card
+from sentence_transformers.cross_encoder.model_card import CrossEncoderModelCardData
 from sentence_transformers.util import is_datasets_available, is_training_available
 
 if is_datasets_available():
@@ -201,7 +202,7 @@ class TestGenerateUsageSnippetCrossEncoder:
 
     def test_cross_encoder_custom_examples(self) -> None:
         data = CrossEncoderModelCardData()
-        data.predict_example = [["q1", "a1"], ["q1", "a2"]]
+        data.usage_examples = [["q1", "a1"], ["q1", "a2"]]
         data.model = None
         snippet = data.generate_usage_snippet()
 
@@ -213,7 +214,7 @@ class TestGenerateUsageSnippetCrossEncoder:
     def test_cross_encoder_multi_label(self) -> None:
         """Multi-label: shape includes num_labels, no rank section."""
         data = CrossEncoderModelCardData()
-        data.predict_example = [["q", "a1"], ["q", "a2"]]
+        data.usage_examples = [["q", "a1"], ["q", "a2"]]
 
         class FakeModel:
             num_labels = 3
@@ -228,7 +229,7 @@ class TestGenerateUsageSnippetCrossEncoder:
     def test_cross_encoder_single_label_has_rank(self) -> None:
         """Single-label: shape is (n,), rank section present."""
         data = CrossEncoderModelCardData()
-        data.predict_example = [["q", "a1"], ["q", "a2"]]
+        data.usage_examples = [["q", "a1"], ["q", "a2"]]
 
         class FakeModel:
             num_labels = 1
@@ -250,8 +251,8 @@ class TestGenerateUsageSnippetCrossEncoder:
         data = CrossEncoderModelCardData()
         data.model_id = "user/multimodal-ce"
         img = PILModule.new("RGB", (64, 64), color=(255, 0, 0))
-        data.predict_example = [[img, "A cat"], [img, "A dog"]]
-        data.predict_example_display = [["assets/image_0.jpg", "A cat"], ["assets/image_0.jpg", "A dog"]]
+        data.usage_examples = [[img, "A cat"], [img, "A dog"]]
+        data.usage_examples_display = [["assets/image_0.jpg", "A cat"], ["assets/image_0.jpg", "A dog"]]
 
         class FakeModel:
             num_labels = 1
@@ -274,7 +275,7 @@ class TestGenerateUsageSnippetCrossEncoder:
             pytest.skip("Pillow not installed")
 
         model = reranker_bert_tiny_model
-        model.model_card_data.predict_example = [
+        model.model_card_data.usage_examples = [
             [PILModule.new("RGB", (64, 64), color=(255, 0, 0)), "A cat"],
             [PILModule.new("RGB", (64, 64), color=(0, 255, 0)), "A dog"],
         ]
