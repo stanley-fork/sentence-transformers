@@ -599,6 +599,8 @@ class Transformer(InputModule):
         # which is needed for logits_to_keep=1 and CausalScoreHead.
         if self.transformer_task in ("text-generation", "any-to-any"):
             self.processor.padding_side = "left"
+            if hasattr(self.processor, "tokenizer"):
+                self.processor.tokenizer.padding_side = "left"
 
         self.input_formatter = InputFormatter(
             model_type=self.config.model_type, message_format=self.message_format, processor=self.processor
