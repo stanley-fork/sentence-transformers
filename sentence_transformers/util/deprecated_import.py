@@ -74,7 +74,7 @@ DEPRECATED_MODULE_PATHS = {
     "sentence_transformers.models.BoW": "sentence_transformers.sentence_transformer.modules.bow",
     "sentence_transformers.models.CLIPModel": "sentence_transformers.sentence_transformer.modules.clip_model",
     "sentence_transformers.models.CNN": "sentence_transformers.sentence_transformer.modules.cnn",
-    "sentence_transformers.models.Dense": "sentence_transformers.sentence_transformer.modules.dense",
+    "sentence_transformers.models.Dense": "sentence_transformers.base.modules.dense",
     "sentence_transformers.models.Dropout": "sentence_transformers.sentence_transformer.modules.dropout",
     "sentence_transformers.models.InputModule": "sentence_transformers.base.modules.input_module",
     "sentence_transformers.models.LSTM": "sentence_transformers.sentence_transformer.modules.lstm",
