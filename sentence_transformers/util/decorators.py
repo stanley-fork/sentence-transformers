@@ -102,10 +102,33 @@ def cross_encoder_init_args_decorator(func):
     * ``cache_dir`` -> ``cache_folder``
     * ``default_activation_function`` -> ``activation_fn``
     * ``classifier_dropout`` -> ``config_kwargs["classifier_dropout"]``
+
+    Also handles legacy positional arguments (``num_labels``, ``max_length``,
+    ``activation_fn``, ``device``), which are now keyword-only.
     """
+
+    # Old positional order after model_name_or_path (which is still positional):
+    # num_labels, max_length, activation_fn, device
+    _POSITIONAL_ARGS = ("num_labels", "max_length", "activation_fn", "device")
 
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
+        # Handle old-style positional arguments: in v5.3 and earlier, num_labels,
+        # max_length, activation_fn, and device could be passed positionally.
+        if args:
+            # First positional arg is model_name_or_path (still positional), rest are legacy
+            new_args = args[:1]
+            for i, value in enumerate(args[1:]):
+                if i < len(_POSITIONAL_ARGS):
+                    name = _POSITIONAL_ARGS[i]
+                    logger.warning(
+                        f"Passing `{name}` as a positional argument to CrossEncoder is deprecated. "
+                        f"Please use `{name}={value!r}` as a keyword argument instead."
+                    )
+                    if name not in kwargs:
+                        kwargs[name] = value
+            args = new_args
+
         kwargs_renamed_mapping = {
             "model_name": "model_name_or_path",
             "automodel_args": "model_kwargs",

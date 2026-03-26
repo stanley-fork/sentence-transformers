@@ -250,6 +250,60 @@ class TestCrossEncoderInitArgsDecorator:
 
         assert result == {"config_kwargs": {"classifier_dropout": 0.5, "other": True}}
 
+    def test_positional_num_labels(self, caplog):
+        @cross_encoder_init_args_decorator
+        def func(self, model_name_or_path, **kwargs):
+            return model_name_or_path, kwargs
+
+        with caplog.at_level(logging.WARNING):
+            model_name, kwargs = func(None, "my-model", 3)
+
+        assert model_name == "my-model"
+        assert kwargs == {"num_labels": 3}
+        assert "num_labels" in caplog.text
+        assert "positional" in caplog.text
+
+    def test_positional_all_four_legacy_args(self, caplog):
+        """Old signature: CrossEncoder(model_name, num_labels, max_length, activation_fn, device)."""
+        import torch
+
+        @cross_encoder_init_args_decorator
+        def func(self, model_name_or_path, **kwargs):
+            return model_name_or_path, kwargs
+
+        with caplog.at_level(logging.WARNING):
+            model_name, kwargs = func(None, "my-model", 2, 512, torch.nn.Sigmoid(), "cuda")
+
+        assert model_name == "my-model"
+        assert kwargs["num_labels"] == 2
+        assert kwargs["max_length"] == 512
+        assert isinstance(kwargs["activation_fn"], torch.nn.Sigmoid)
+        assert kwargs["device"] == "cuda"
+
+    def test_positional_does_not_override_kwarg(self, caplog):
+        @cross_encoder_init_args_decorator
+        def func(self, model_name_or_path, **kwargs):
+            return model_name_or_path, kwargs
+
+        with caplog.at_level(logging.WARNING):
+            model_name, kwargs = func(None, "my-model", 2, num_labels=5)
+
+        assert model_name == "my-model"
+        # Keyword arg wins over positional
+        assert kwargs == {"num_labels": 5}
+
+    def test_no_positional_no_warning(self, caplog):
+        @cross_encoder_init_args_decorator
+        def func(self, model_name_or_path, **kwargs):
+            return model_name_or_path, kwargs
+
+        with caplog.at_level(logging.WARNING):
+            model_name, kwargs = func(None, "my-model", num_labels=2)
+
+        assert model_name == "my-model"
+        assert kwargs == {"num_labels": 2}
+        assert "positional" not in caplog.text
+
 
 class TestCrossEncoderPredictRankArgsDecorator:
     def test_all_deprecated_kwargs(self, caplog):

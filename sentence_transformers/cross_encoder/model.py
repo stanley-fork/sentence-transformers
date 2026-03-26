@@ -135,8 +135,6 @@ class CrossEncoder(BaseModel, FitMixin):
             # [{'corpus_id': 0, 'score': 8.607317}, {'corpus_id': 1, 'score': 1.1329174}]
     """
 
-    # TODO: Check backwards incompatibilities with the methods that are now handled by the superclass
-
     model_card_data_class = CrossEncoderModelCardData
     default_huggingface_organization: str | None = "cross-encoder"
     _model_card_model_id_placeholder = "cross_encoder_model_id"
