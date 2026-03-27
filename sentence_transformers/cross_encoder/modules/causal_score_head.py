@@ -26,7 +26,7 @@ class CausalScoreHead(Module):
         else:
             scores = logits[:, self.true_token_id] - logits[:, self.false_token_id]
 
-        features["scores"] = scores
+        features["scores"] = scores.unsqueeze(1)
         return features
 
     def save(self, output_path) -> None:

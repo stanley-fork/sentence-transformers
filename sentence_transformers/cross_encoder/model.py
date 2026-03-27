@@ -646,6 +646,9 @@ class CrossEncoder(BaseModel, FitMixin):
         self.to(device)
 
         self.eval()
+        activation_fn = activation_fn or self.activation_fn
+        num_labels = self.num_labels
+
         pred_scores = []
         length_sorted_idx = np.argsort([-self._input_length(pair) for pair in inputs])
         if self._can_flatten_inputs():
@@ -658,20 +661,17 @@ class CrossEncoder(BaseModel, FitMixin):
             out_features = self.forward(features, **kwargs)
             scores = out_features["scores"]
 
-            activation_fn = activation_fn or self.activation_fn
             if activation_fn is not None:
                 scores = activation_fn(scores)
 
-            # TODO: This is just backwards compatibility with the code below, we can optimize this
-            if scores.ndim == 1:
-                scores = scores.unsqueeze(1)
-
             if apply_softmax and scores.ndim > 1:
                 scores = torch.nn.functional.softmax(scores, dim=1)
-            pred_scores.extend(scores)
 
-        if self.num_labels == 1:
-            pred_scores = [score[0] for score in pred_scores]
+            # Squeeze [batch_size, 1] -> [batch_size] for single-label models
+            if num_labels == 1:
+                scores = scores.squeeze(-1)
+
+            pred_scores.extend(scores)
 
         pred_scores = [pred_scores[idx] for idx in np.argsort(length_sorted_idx)]
 
