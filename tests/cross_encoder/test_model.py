@@ -689,11 +689,6 @@ Judge whether the Document meets the requirements based on the Query and the Ins
         default_prompt_name="web_search",
     )
 
-    # model.tokenizer.chat_template = jinja_template
-    # model[0].modality_config["message"] = model[0].modality_config.pop("text")
-    # model.prompts = {"web_search": task}
-    # model.default_prompt_name = "web_search"
-
     query = "Which planet is known as the Red Planet?"
     documents = [
         "Venus is often called Earth's twin because of its similar size and proximity.",
@@ -732,10 +727,6 @@ Judge whether the Document meets the requirements based on the Query and the Ins
         processor_kwargs={"chat_template": chat_template},
     )
     assert model.dtype == torch.float32
-    # model.tokenizer.chat_template = chat_template
-    # Because we're adding the chat template after loading, we need to adjust the modality config manually
-    # This is not ideal
-    # model[0].modality_config["message"] = model[0].modality_config.pop("text")
 
     query = "Which planet is known as the Red Planet?"
     documents = [
@@ -773,10 +764,6 @@ Judge whether the Document meets the requirements based on the Query and the Ins
         processor_kwargs={"chat_template": chat_template},
     )
     assert model.dtype == torch.float32
-    # model.tokenizer.chat_template = chat_template
-    # Because we're adding the chat template after loading, we need to adjust the modality config manually
-    # This is not ideal
-    # model[0].modality_config["message"] = model[0].modality_config.pop("text")
 
     query = "Which planet is known as the Red Planet?"
     documents = [
