@@ -37,7 +37,7 @@ if is_ci():
 
 # Curated list of tiny models from hf-internal-testing and tiny-random organizations
 # These are pre-built tiny models specifically designed for testing
-with open("tests/modules/transformers_tiny_models.json", encoding="utf8") as f:
+with open("tests/base/modules/transformer/transformers_tiny_models.json", encoding="utf8") as f:
     TINY_MODEL_MAPPING: dict[str, str] = json.load(f)
 
 # Architectures that don't work nicely, but that are low-priority to fix
