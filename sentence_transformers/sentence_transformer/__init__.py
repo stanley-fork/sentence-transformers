@@ -6,8 +6,6 @@ from .model_card import SentenceTransformerModelCardData
 from .trainer import SentenceTransformerTrainer
 from .training_args import SentenceTransformerTrainingArguments
 
-# TODO: Perhaps also import evaluation/losses here?
-
 __all__ = [
     "SentenceTransformer",
     "SentenceTransformerModelCardData",
