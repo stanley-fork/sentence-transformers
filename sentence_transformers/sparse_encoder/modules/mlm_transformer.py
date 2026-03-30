@@ -13,16 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 class MLMTransformer(Transformer):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        # TODO: This warning triggers on existing models, let's only warn if the user explicitly tries to instantiate MLMTransformer
-        # TODO: Remove that we'll remove this in a future release, we really don't have to
-        logger.warning(
-            "MLMTransformer is deprecated and will be removed in a future release. "
-            "Please use sentence_transformers.sentence_transformer.modules.Transformer with "
-            '`transformer_task="fill-mask"` instead.'
-        )
+    def __init__(self, *args: Any, _from_auto_load: bool = False, **kwargs: Any) -> None:
+        if not _from_auto_load:
+            logger.warning(
+                'MLMTransformer is deprecated. Please use Transformer with `transformer_task="fill-mask"` instead.'
+            )
         transformer_task = kwargs.pop("transformer_task", "fill-mask")
         super().__init__(*args, transformer_task=transformer_task, **kwargs)
+
+    @classmethod
+    def load(cls, model_name_or_path: str, **kwargs) -> MLMTransformer:
+        init_kwargs = cls._load_init_kwargs(model_name_or_path=model_name_or_path, **kwargs)
+        return cls(model_name_or_path=model_name_or_path, _from_auto_load=True, **init_kwargs)
 
     @staticmethod
     def _get_default_modality_config(config: dict[str, Any]) -> tuple[ModalityConfig, str]:
