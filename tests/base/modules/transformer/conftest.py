@@ -39,6 +39,7 @@ if is_ci():
 # These are pre-built tiny models specifically designed for testing
 with open("tests/base/modules/transformer/transformers_tiny_models.json", encoding="utf8") as f:
     TINY_MODEL_MAPPING: dict[str, str] = json.load(f)
+    # TINY_MODEL_MAPPING = {arch: model for arch, model in TINY_MODEL_MAPPING.items() if arch == "regnet"}
 
 # Architectures that don't work nicely, but that are low-priority to fix
 XFAIL_ARCHITECTURES = [
@@ -72,7 +73,6 @@ XFAIL_ARCHITECTURES = [
     "speech_to_text",  # Tricky case as it's an encoder-decoder with unusual inputs, low prio
     # Transformers issues
     "focalnet",  # TODO: FocalNetModel.input_modalities still defaults to 'text'
-    "regnet",  # TODO: RegNetModel.input_modalities still defaults to 'text'
     "fuyu",  # get_image_features accepts pixel_values, but the image processor only returns image_patches (identical, just different name), low prio
     "gemma3n",  # TODO: The Gemma3nModel type hint is not correct, plus the Gemma3nProcessor requires text at all times, despite code where text is created if it doesn't exist, high prio
     "tvp",  # TODO: TvpProcessor.get_attributes() returns ['image_processor', 'tokenizer'] instead of ['video_processor', 'tokenizer']
