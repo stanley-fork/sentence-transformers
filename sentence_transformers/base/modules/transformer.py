@@ -50,7 +50,6 @@ from sentence_transformers.backend import load_onnx_model, load_openvino_model
 from sentence_transformers.base.modality import InputFormatter, format_modality
 from sentence_transformers.base.modality_types import (
     MODALITY_TO_PROCESSOR_ARG,
-    MessageFormat,
     MessageInput,
     Modality,
     PairInput,
@@ -104,9 +103,20 @@ TransformerTask = Literal[
 ]
 
 
-class ModalityParams(TypedDict):
+class _ModalityParamsRequired(TypedDict):
     method: str
     method_output_name: str | None
+
+
+class ModalityParams(_ModalityParamsRequired, total=False):
+    """Parameters for a single modality entry in the modality config.
+
+    The ``format`` key is only used for the ``"message"`` modality and controls how
+    message content is structured: ``"structured"`` (list of typed dicts) or ``"flat"``
+    (direct string value).
+    """
+
+    format: Literal["structured", "flat"]
 
 
 ModalityConfig = dict[Modality, ModalityParams]
@@ -476,11 +486,12 @@ class Transformer(InputModule):
         backend (str, optional): Backend used for model inference. Can be ``"torch"`` (default), ``"onnx"``,
             or ``"openvino"``. Defaults to ``"torch"``.
         modality_config (dict, optional): Custom modality configuration mapping modality names to method and
-            output name dicts. When provided, ``module_output_name`` must also be set. Defaults to None.
+            output name dicts. When provided, ``module_output_name`` must also be set. The ``"message"``
+            modality entry may include a ``"format"`` key (``"structured"``, ``"flat"``, or ``"auto"``)
+            to control how chat-template inputs are formatted. Defaults to None.
         module_output_name (str, optional): The name of the output feature this module creates (e.g.
             ``"token_embeddings"``, ``"scores"``). Required when ``modality_config`` is provided.
             Defaults to None.
-        message_format (str, optional): How to handle message-format inputs. Defaults to ``"auto"``.
         unpad_inputs (bool, optional): Controls whether text-only inputs are concatenated without
             padding for faster inference using flash attention's variable-length functions. Non-text
             inputs (images, audio, video) are always padded normally. If ``None`` (default), unpadding
@@ -502,7 +513,6 @@ class Transformer(InputModule):
         "transformer_task",
         "modality_config",
         "module_output_name",
-        "message_format",
         "processing_kwargs",
         "unpad_inputs",
     ]
@@ -521,7 +531,6 @@ class Transformer(InputModule):
         backend: Literal["torch", "onnx", "openvino"] = "torch",
         modality_config: ModalityConfig | None = None,
         module_output_name: str | None = None,
-        message_format: MessageFormat = "auto",
         unpad_inputs: bool | None = None,
         max_seq_length: int | None = None,
         do_lower_case: bool = False,
@@ -555,7 +564,6 @@ class Transformer(InputModule):
                 "'common' or a modality key ('text', 'audio', 'image', 'video')?"
             )
         self.backend = backend
-        self.message_format = message_format
         self.do_lower_case = do_lower_case
         self._prompt_length_mapping = {}
         self._method_signature_cache: dict[str, set[str]] = {}
@@ -633,8 +641,13 @@ class Transformer(InputModule):
             if hasattr(self.processor, "tokenizer"):
                 self.processor.tokenizer.padding_side = "left"
 
+        # Extract message format from modality_config if provided, otherwise let InputFormatter infer it
+        if modality_config is not None and "message" in modality_config:
+            message_format = modality_config["message"].get("format", "auto")
+        else:
+            message_format = "auto"
         self.input_formatter = InputFormatter(
-            model_type=self.config.model_type, message_format=self.message_format, processor=self.processor
+            model_type=self.config.model_type, message_format=message_format, processor=self.processor
         )
 
         if modality_config is not None:
@@ -1366,9 +1379,12 @@ class Transformer(InputModule):
             # Edge-case models may also support the message format via chat templates
             if hasattr(processor, "chat_template") and processor.chat_template is not None:
                 if "message" not in modality_config:
-                    modality_config["message"] = modality_config.get(
-                        "text", {"method": "forward", "method_output_name": default_method_output_name}
-                    )
+                    modality_config["message"] = {
+                        **modality_config.get(
+                            "text", {"method": "forward", "method_output_name": default_method_output_name}
+                        ),
+                        "format": self.input_formatter.message_format,
+                    }
             return modality_config, module_output_name
 
         modalities = self.infer_modalities_from_processor(processor)
@@ -1379,10 +1395,13 @@ class Transformer(InputModule):
         # If we can't inspect the method return type, we assume it has the default output name.
         output_fields = self._get_method_output_fields(model.forward)
         if output_fields is None or default_method_output_name in output_fields:
-            return {
-                modality: {"method": "forward", "method_output_name": default_method_output_name}
-                for modality in modalities
-            }, default_module_output_name
+            modality_config: ModalityConfig = {}
+            for modality in modalities:
+                entry = ModalityParams(method="forward", method_output_name=default_method_output_name)
+                if modality == "message":
+                    entry["format"] = self.input_formatter.message_format
+                modality_config[modality] = entry
+            return modality_config, default_module_output_name
 
         # For feature-extraction, if there's no 'last_hidden_state', we can check for modality-specific methods like get_..._features
         if self.transformer_task == "feature-extraction":
@@ -1727,8 +1746,6 @@ class Transformer(InputModule):
     def get_config_dict(self) -> dict[str, Any]:
         """Return the config dict for serialization, with tuple modality keys joined as plus-separated strings."""
         config_dict = super().get_config_dict()
-        if config_dict.get("message_format") == "auto":
-            config_dict["message_format"] = self.input_formatter.message_format
         config_dict["modality_config"] = {
             format_modality(modality): params for modality, params in self.modality_config.items()
         }
