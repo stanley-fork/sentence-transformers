@@ -28,7 +28,7 @@ logging.basicConfig(
 )
 
 # Training parameters
-model_name = "distilroberta-base"
+model_name = "distilbert/distilroberta-base"
 train_batch_size = 128
 max_seq_length = 32
 num_epochs = 1

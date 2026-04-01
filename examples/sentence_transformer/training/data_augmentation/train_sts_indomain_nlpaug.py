@@ -49,8 +49,8 @@ from sentence_transformers.util.similarity import SimilarityFunction
 # Set the log level to INFO to get more information
 logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 
-# You can specify any huggingface/transformers pre-trained model here, for example, bert-base-uncased, roberta-base, xlm-roberta-base
-model_name = sys.argv[1] if len(sys.argv) > 1 else "bert-base-uncased"
+# You can specify any huggingface/transformers pre-trained model here, for example, google-bert/bert-base-uncased, FacebookAI/roberta-base, FacebookAI/xlm-roberta-base
+model_name = sys.argv[1] if len(sys.argv) > 1 else "google-bert/bert-base-uncased"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 batch_size = 16
 num_epochs = 1

@@ -24,7 +24,7 @@ from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import get_device_name, http_get, semantic_search
 
 # We use the Bi-Encoder to encode all passages, so that we can use it with semantic search
-model_name = "nq-distilbert-base-v1"
+model_name = "sentence-transformers/nq-distilbert-base-v1"
 bi_encoder = SentenceTransformer(model_name)
 top_k = 5  # Number of passages we want to retrieve with the bi-encoder
 
@@ -49,7 +49,7 @@ print("Passages:", len(passages))
 
 # To speed things up, pre-computed embeddings are downloaded.
 # The provided file encoded the passages with the model 'nq-distilbert-base-v1'
-if model_name == "nq-distilbert-base-v1":
+if model_name == "sentence-transformers/nq-distilbert-base-v1":
     embeddings_filepath = "simplewiki-2020-11-01-nq-distilbert-base-v1.pt"
     if not os.path.exists(embeddings_filepath):
         http_get("http://sbert.net/datasets/simplewiki-2020-11-01-nq-distilbert-base-v1.pt", embeddings_filepath)

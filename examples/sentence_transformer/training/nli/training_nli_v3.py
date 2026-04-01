@@ -1,6 +1,6 @@
 """
 The system trains BERT (or any other transformer model like RoBERTa, DistilBERT etc.) on the SNLI + MultiNLI (AllNLI) dataset
-with GISTEmbedLoss, using all-MiniLM-L6-v2 as an efficient guiding model. Entailments are positive pairs and the contradiction
+with GISTEmbedLoss, using sentence-transformers/all-MiniLM-L6-v2 as an efficient guiding model. Entailments are positive pairs and the contradiction
 on AllNLI dataset is added as a hard negative. At every 10% training steps, the model is evaluated on the STS benchmark dataset
 
 Usage:
@@ -30,7 +30,7 @@ from sentence_transformers.util.similarity import SimilarityFunction
 # Set the log level to INFO to get more information
 logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 
-model_name = sys.argv[1] if len(sys.argv) > 1 else "distilroberta-base"
+model_name = sys.argv[1] if len(sys.argv) > 1 else "distilbert/distilroberta-base"
 train_batch_size = 128  # The larger you select this, the better the results (usually). But it requires more GPU memory
 max_seq_length = 75
 num_epochs = 1
@@ -54,7 +54,7 @@ logging.info(train_dataset)
 
 # 3. Define our training loss: https://sbert.net/docs/package_reference/sentence_transformer/losses.html#gistembedloss
 # The guiding model
-guide_model = SentenceTransformer("all-MiniLM-L6-v2")
+guide_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 train_loss = GISTEmbedLoss(model, guide_model)
 
 # 4. Define an evaluator for use during training. This is useful to keep track of alongside the evaluation loss.

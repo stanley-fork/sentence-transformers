@@ -54,7 +54,7 @@ Model Initialization
 The model initialization function is a function that takes the hyperparameters of the current "trial" as input and returns a `SentenceTransformer` model. Generally, this function is quite simple. Here's an example of a model initialization function::
 
     def hpo_model_init(trial):
-        return SentenceTransformer("distilbert-base-uncased")
+        return SentenceTransformer("distilbert/distilbert-base-uncased")
 
 Loss Initialization
 ~~~~~~~~~~~~~~~~~~~
@@ -128,7 +128,7 @@ You can perform HPO on any regular training loop, the only difference being that
 
     # 4. Define the Model Initialization
     def hpo_model_init(trial):
-        return SentenceTransformer("distilbert-base-uncased")
+        return SentenceTransformer("distilbert/distilbert-base-uncased")
 
     # 5. Define the Loss Initialization
     def hpo_loss_init(model):

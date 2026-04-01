@@ -122,14 +122,14 @@ The ``tokenizer_kwargs`` parameter on :class:`~sentence_transformers.sentence_tr
    * - .. code-block:: python
 
         model = SentenceTransformer(
-            "all-MiniLM-L6-v2",
+            "sentence-transformers/all-MiniLM-L6-v2",
             tokenizer_kwargs={"model_max_length": 256},
         )
 
      - .. code-block:: python
 
         model = SentenceTransformer(
-            "all-MiniLM-L6-v2",
+            "sentence-transformers/all-MiniLM-L6-v2",
             processor_kwargs={"model_max_length": 256},
         )
 ```
@@ -317,7 +317,7 @@ We also deprecated the :meth:`~sentence_transformers.sentence_transformer.model.
          from sentence_transformers import SentenceTransformer
 
          def main():
-             model = SentenceTransformer("all-mpnet-base-v2")
+             model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
              texts = ["The weather is so nice!", "It's so sunny outside.", ...]
 
              pool = model.start_multi_process_pool(["cpu", "cpu", "cpu", "cpu"])
@@ -336,7 +336,7 @@ We also deprecated the :meth:`~sentence_transformers.sentence_transformer.model.
          from sentence_transformers import SentenceTransformer
 
          def main():
-             model = SentenceTransformer("all-mpnet-base-v2")
+             model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
              texts = ["The weather is so nice!", "It's so sunny outside.", ...]
 
              embeddings = model.encode(texts, device=["cpu", "cpu", "cpu", "cpu"], chunk_size=512)
@@ -459,7 +459,7 @@ The :meth:`~sentence_transformers.sentence_transformer.model.SentenceTransformer
            # Use a regular SentenceTransformer for the document embeddings,
            # and a static embedding model for the query embeddings
            document_embedder = SentenceTransformer("mixedbread-ai/mxbai-embed-large-v1")
-           query_embedder = SentenceTransformer("static-retrieval-mrl-en-v1")
+           query_embedder = SentenceTransformer("sentence-transformers/static-retrieval-mrl-en-v1")
            asym = Asym({
                "query": list(query_embedder.children()),
                "document": list(document_embedder.children()),
@@ -486,7 +486,7 @@ The :meth:`~sentence_transformers.sentence_transformer.model.SentenceTransformer
            # Use a regular SentenceTransformer for the document embeddings,
            # and a static embedding model for the query embeddings
            document_embedder = SentenceTransformer("mixedbread-ai/mxbai-embed-large-v1")
-           query_embedder = SentenceTransformer("static-retrieval-mrl-en-v1")
+           query_embedder = SentenceTransformer("sentence-transformers/static-retrieval-mrl-en-v1")
            router = Router.for_query_document(
                query_modules=list(query_embedder.children()),
                document_modules=list(document_embedder.children()),
@@ -955,7 +955,7 @@ The :meth:`~sentence_transformers.sentence_transformer.model.SentenceTransformer
            # Transformer directly. This was previously commonly done by accessing
            # the first module, often 'Transformer', and then accessing the
            # `auto_model` attribute.
-           model = SentenceTransformer("all-MiniLM-L6-v2")
+           model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
            print(model[0].auto_model)
            # BertModel(
            #   (embeddings): BertEmbeddings(
@@ -968,7 +968,7 @@ The :meth:`~sentence_transformers.sentence_transformer.model.SentenceTransformer
            
            # Now, you can just use the `transformers_model` attribute on the model itself
            # even if your model has non-standard modules.
-           model = SentenceTransformer("all-MiniLM-L6-v2")
+           model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
            print(model.transformers_model)
            # BertModel(
            #   (embeddings): BertEmbeddings(

@@ -41,7 +41,7 @@ from sentence_transformers.sentence_transformer.trainer import SentenceTransform
 logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 
 # As base model, we use DistilBERT-base that was pre-trained on NLI and STSb data
-model_name = "stsb-distilbert-base"
+model_name = "sentence-transformers/stsb-distilbert-base"
 model = SentenceTransformer(model_name)
 # Training for multiple epochs can be beneficial, as in each epoch a mini-batch is sampled differently
 # hence, we get different negatives for each positive

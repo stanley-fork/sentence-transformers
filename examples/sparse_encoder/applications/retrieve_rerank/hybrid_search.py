@@ -91,7 +91,7 @@ logger.info("=" * 80)
 logger.info("STEP 2: EVALUATING DENSE RETRIEVAL")
 logger.info("=" * 80)
 
-bi_encoder_model_name = "multi-qa-MiniLM-L6-cos-v1"
+bi_encoder_model_name = "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
 logger.info(f"Loading dense encoder model: {bi_encoder_model_name}")
 bi_encoder = SentenceTransformer(bi_encoder_model_name)
 bi_encoder_similarity_fn_name = bi_encoder.similarity_fn_name

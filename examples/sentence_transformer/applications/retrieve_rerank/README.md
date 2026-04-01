@@ -43,7 +43,7 @@ The bi-encoder produces embeddings independently for your paragraphs and for you
 ```python
 from sentence_transformers import SentenceTransformer
 
-model = SentenceTransformer("multi-qa-mpnet-base-dot-v1")
+model = SentenceTransformer("sentence-transformers/multi-qa-mpnet-base-dot-v1")
 
 docs = [
     "My first paragraph. That contains information",

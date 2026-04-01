@@ -27,8 +27,8 @@ from sentence_transformers.util.similarity import SimilarityFunction
 # Set the log level to INFO to get more information
 logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 
-# You can specify any Hugging Face pre-trained model here, for example, bert-base-uncased, roberta-base, xlm-roberta-base
-model_name = sys.argv[1] if len(sys.argv) > 1 else "bert-base-uncased"
+# You can specify any Hugging Face pre-trained model here, for example, google-bert/bert-base-uncased, FacebookAI/roberta-base, FacebookAI/xlm-roberta-base
+model_name = sys.argv[1] if len(sys.argv) > 1 else "google-bert/bert-base-uncased"
 train_batch_size = 16
 
 output_dir = "output/training_nli_" + model_name.replace("/", "-") + "-" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

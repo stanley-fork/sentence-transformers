@@ -13,8 +13,6 @@ Characteristics of Sentence Transformer (a.k.a bi-encoder) models:
 
 Once you have `installed <installation.html>`_ Sentence Transformers, you can easily use Sentence Transformer models:
 
-.. TODO: Replace all SentenceTransformer("all-MiniLM-L6-v2") with SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2") to make it clearer that these refer to Hugging Face models, hinting that other (newer) models can also be loaded.
-
 .. sidebar:: Documentation
 
    1. :class:`SentenceTransformer <sentence_transformers.sentence_transformer.model.SentenceTransformer>`
@@ -39,7 +37,7 @@ Once you have `installed <installation.html>`_ Sentence Transformers, you can ea
       from sentence_transformers import SentenceTransformer
 
       # 1. Load a pretrained Sentence Transformer model
-      model = SentenceTransformer("all-MiniLM-L6-v2")
+      model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
       # The sentences to encode
       sentences = [
@@ -91,7 +89,7 @@ Once you have `installed <installation.html>`_ Sentence Transformers, you can ea
       #         [0.1255, 0.6749],
       #         [0.1283, 0.2704]])
 
-With ``SentenceTransformer("all-MiniLM-L6-v2")`` we pick which `Sentence Transformer model <https://huggingface.co/models?library=sentence-transformers>`_ we load. In this example, we load `all-MiniLM-L6-v2 <https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2>`_, which is a MiniLM model finetuned on a large dataset of over 1 billion training pairs. Using :meth:`SentenceTransformer.similarity() <sentence_transformers.sentence_transformer.model.SentenceTransformer.similarity>`, we compute the similarity between all pairs of sentences. As expected, the similarity between semantically related inputs is higher than between unrelated ones. Multimodal models like `tomaarsen/Qwen3-VL-Embedding-2B <https://huggingface.co/tomaarsen/Qwen3-VL-Embedding-2B>`_ can also encode images, audio, or video into the same embedding space.
+With ``SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")`` we pick which `Sentence Transformer model <https://huggingface.co/models?library=sentence-transformers>`_ we load. In this example, we load `sentence-transformers/all-MiniLM-L6-v2 <https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2>`_, which is a MiniLM model finetuned on a large dataset of over 1 billion training pairs. Using :meth:`SentenceTransformer.similarity() <sentence_transformers.sentence_transformer.model.SentenceTransformer.similarity>`, we compute the similarity between all pairs of sentences. As expected, the similarity between semantically related inputs is higher than between unrelated ones. Multimodal models like `tomaarsen/Qwen3-VL-Embedding-2B <https://huggingface.co/tomaarsen/Qwen3-VL-Embedding-2B>`_ can also encode images, audio, or video into the same embedding space.
 
 Finetuning Sentence Transformer models is easy and requires only a few lines of code. For more information, see the `Training Overview <./sentence_transformer/training_overview.html>`__ section.
 

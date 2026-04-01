@@ -110,7 +110,7 @@ def mine_hard_negatives(
         >>> from sentence_transformers import SentenceTransformer
         >>> from datasets import load_dataset
         >>> # Load a Sentence Transformer model
-        >>> model = SentenceTransformer("all-MiniLM-L6-v2")
+        >>> model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
         >>>
         >>> # Load a dataset to mine hard negatives from
         >>> dataset = load_dataset("sentence-transformers/natural-questions", split="train")

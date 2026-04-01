@@ -11,7 +11,7 @@ A Sentence Transformer model consists of a collection of modules (`docs <../../p
 * :class:`~sentence_transformers.base.modules.Dense`: This module contains a linear layer that post-processes the embedding output from the Pooling module.
 * :class:`~sentence_transformers.sentence_transformer.modules.Normalize`: This module normalizes the embedding from the previous layer.
 
-For example, the popular `all-MiniLM-L6-v2 <https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2>`_ model can also be loaded by initializing the 3 specific modules that make up that model:
+For example, the popular `sentence-transformers/all-MiniLM-L6-v2 <https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2>`_ model can also be loaded by initializing the 3 specific modules that make up that model:
 
 .. code-block:: python
 
@@ -141,14 +141,14 @@ To be specific, these two snippets are identical::
 
    from sentence_transformers import SentenceTransformer
 
-   model = SentenceTransformer("bert-base-uncased")
+   model = SentenceTransformer("google-bert/bert-base-uncased")
 
 ::
 
    from sentence_transformers import SentenceTransformer
    from sentence_transformers.sentence_transformer.modules import Transformer, Pooling
 
-   transformer = Transformer("bert-base-uncased")
+   transformer = Transformer("google-bert/bert-base-uncased")
    pooling = Pooling(transformer.get_embedding_dimension(), pooling_mode="mean")
    model = SentenceTransformer(modules=[transformer, pooling])
 
@@ -302,7 +302,7 @@ This can now be used as a module in a Sentence Transformer model::
    from sentence_transformers.sentence_transformer.modules import Transformer, Pooling, Normalize
    from decay_pooling import DecayMeanPooling
 
-   transformer = Transformer("bert-base-uncased", max_seq_length=256)
+   transformer = Transformer("google-bert/bert-base-uncased", max_seq_length=256)
    decay_mean_pooling = DecayMeanPooling(transformer.get_embedding_dimension(), decay=0.99)
    normalize = Normalize()
 

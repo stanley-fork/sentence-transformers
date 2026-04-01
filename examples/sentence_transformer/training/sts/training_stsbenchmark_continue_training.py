@@ -3,7 +3,7 @@ This example loads the pre-trained SentenceTransformer model 'nli-distilroberta-
 It then fine-tunes this model for some epochs on the STS benchmark dataset.
 
 Note: In this example, you must specify a SentenceTransformer model.
-If you want to fine-tune a huggingface/transformers model like bert-base-uncased, see training_nli.py and training_stsbenchmark.py
+If you want to fine-tune a huggingface/transformers model like google-bert/bert-base-uncased, see training_nli.py and training_stsbenchmark.py
 """
 
 import logging
@@ -23,7 +23,7 @@ from sentence_transformers.util.similarity import SimilarityFunction
 # Set the log level to INFO to get more information
 logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 
-# You can specify any Sentence Transformer model here, for example all-mpnet-base-v2, all-MiniLM-L6-v2, mixedbread-ai/mxbai-embed-large-v1
+# You can specify any Sentence Transformer model here, for example sentence-transformers/all-mpnet-base-v2, sentence-transformers/all-MiniLM-L6-v2, mixedbread-ai/mxbai-embed-large-v1
 model_name = sys.argv[1] if len(sys.argv) > 1 else "sentence-transformers/all-mpnet-base-v2"
 train_batch_size = 16
 num_epochs = 4

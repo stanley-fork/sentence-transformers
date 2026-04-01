@@ -44,8 +44,8 @@ class MSEEvaluator(BaseEvaluator):
             from datasets import load_dataset
 
             # Load a model
-            student_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
-            teacher_model = SentenceTransformer('all-mpnet-base-v2')
+            student_model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
+            teacher_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
             # Load any dataset with some texts
             dataset = load_dataset("sentence-transformers/stsb", split="validation")

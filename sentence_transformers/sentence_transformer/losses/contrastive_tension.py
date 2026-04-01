@@ -54,7 +54,7 @@ class ContrastiveTensionLoss(nn.Module):
             from sentence_transformers.sentence_transformer.training_args import SentenceTransformerTrainingArguments
             from sentence_transformers.sentence_transformer.trainer import SentenceTransformerTrainer
 
-            model = SentenceTransformer('all-MiniLM-L6-v2')
+            model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
             # The dataset pairs must sometimes contain identical sentences (positive pairs) and sometimes different sentences (negative pairs).
             train_dataset = Dataset.from_dict({
                 "sentence_A": [
@@ -93,7 +93,7 @@ class ContrastiveTensionLoss(nn.Module):
             from sentence_transformers.sentence_transformer.training_args import SentenceTransformerTrainingArguments
             from sentence_transformers.sentence_transformer.trainer import SentenceTransformerTrainer
 
-            model = SentenceTransformer('all-MiniLM-L6-v2')
+            model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
             train_dataset = Dataset.from_dict({
                 "text1": [
                     "It's nice weather outside today.",
@@ -217,7 +217,7 @@ class ContrastiveTensionLossInBatchNegatives(nn.Module):
                 from sentence_transformers import SentenceTransformer, losses
                 from datasets import Dataset
 
-                model = SentenceTransformer('all-MiniLM-L6-v2')
+                model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
                 train_dataset = Dataset.from_dict({
                     "sentence": [

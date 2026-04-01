@@ -63,7 +63,7 @@ class DenoisingAutoEncoderLoss(nn.Module):
                 from sentence_transformers.sentence_transformer.losses import DenoisingAutoEncoderLoss
                 from sentence_transformers.sentence_transformer.trainer import SentenceTransformerTrainer
 
-                model_name = "bert-base-cased"
+                model_name = "google-bert/bert-base-cased"
                 model = SentenceTransformer(model_name)
 
                 def noise_transform(batch, del_ratio=0.6):

@@ -47,7 +47,7 @@ class MSELoss(nn.Module):
                 from datasets import Dataset
 
                 student_model = SentenceTransformer("microsoft/mpnet-base")
-                teacher_model = SentenceTransformer("all-mpnet-base-v2")
+                teacher_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
                 train_dataset = Dataset.from_dict({
                     "english": ["The first sentence",  "The second sentence", "The third sentence",  "The fourth sentence"],
                     "french": ["La première phrase",  "La deuxième phrase", "La troisième phrase",  "La quatrième phrase"],

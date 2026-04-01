@@ -54,7 +54,7 @@ class RerankingEvaluator(BaseEvaluator):
             from datasets import load_dataset
 
             # Load a model
-            model = SentenceTransformer("all-MiniLM-L6-v2")
+            model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
             # Load a dataset with queries, positives, and negatives
             eval_dataset = load_dataset("microsoft/ms_marco", "v1.1", split="validation")

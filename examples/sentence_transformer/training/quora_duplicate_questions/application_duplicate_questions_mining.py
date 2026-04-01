@@ -31,7 +31,7 @@ questions = [
     "How do I get more followers for my Quora?",
 ]
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 # Given a model and a List of strings (texts), evaluation.ParaphraseMiningEvaluator.paraphrase_mining performs a
 # mining task by computing cosine similarity between all possible combinations and returning the ones with the highest scores.

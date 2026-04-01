@@ -45,7 +45,7 @@ logging.basicConfig(
 
 
 # Teacher Model: Model we want to distill to a smaller model
-teacher_model_name = "stsb-roberta-base-v2"
+teacher_model_name = "sentence-transformers/stsb-roberta-base-v2"
 teacher_model = SentenceTransformer(teacher_model_name)
 
 output_dir = "output/model-distillation-" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

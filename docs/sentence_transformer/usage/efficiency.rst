@@ -40,7 +40,7 @@ The PyTorch backend is the default backend for Sentence Transformers. If you don
 
    from sentence_transformers import SentenceTransformer
    
-   model = SentenceTransformer("all-MiniLM-L6-v2")
+   model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
    sentences = ["This is an example sentence", "Each sentence is converted"]
    embeddings = model.encode(sentences)
@@ -55,7 +55,7 @@ If you're using a GPU, then you can use the following options to speed up your i
 
       from sentence_transformers import SentenceTransformer
 
-      model = SentenceTransformer("all-MiniLM-L6-v2", model_kwargs={"torch_dtype": "float16"})
+      model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", model_kwargs={"torch_dtype": "float16"})
       # or: model.half()
 
       sentences = ["This is an example sentence", "Each sentence is converted"]
@@ -69,7 +69,7 @@ If you're using a GPU, then you can use the following options to speed up your i
 
       from sentence_transformers import SentenceTransformer
 
-      model = SentenceTransformer("all-MiniLM-L6-v2", model_kwargs={"torch_dtype": "bfloat16"})
+      model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", model_kwargs={"torch_dtype": "bfloat16"})
       # or: model.bfloat16()
 
       sentences = ["This is an example sentence", "Each sentence is converted"]
@@ -94,7 +94,7 @@ To convert a model to ONNX format, you can use the following code:
 
    from sentence_transformers import SentenceTransformer
 
-   model = SentenceTransformer("all-MiniLM-L6-v2", backend="onnx")
+   model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", backend="onnx")
    
    sentences = ["This is an example sentence", "Each sentence is converted"]
    embeddings = model.encode(sentences)
@@ -149,7 +149,7 @@ See this example for exporting a model with :doc:`optimization level 3 <optimum-
 
       from sentence_transformers import SentenceTransformer, export_optimized_onnx_model
 
-      model = SentenceTransformer("all-MiniLM-L6-v2", backend="onnx")
+      model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", backend="onnx")
       export_optimized_onnx_model(
           model=model,
           optimization_config="O3",
@@ -164,7 +164,7 @@ See this example for exporting a model with :doc:`optimization level 3 <optimum-
 
       pull_request_nr = 2 # NOTE: Update this to the number of your pull request
       model = SentenceTransformer(
-          "all-MiniLM-L6-v2",
+          "sentence-transformers/all-MiniLM-L6-v2",
           backend="onnx",
           model_kwargs={"file_name": "onnx/model_O3.onnx"},
           revision=f"refs/pr/{pull_request_nr}"
@@ -175,7 +175,7 @@ See this example for exporting a model with :doc:`optimization level 3 <optimum-
       from sentence_transformers import SentenceTransformer
 
       model = SentenceTransformer(
-          "all-MiniLM-L6-v2",
+          "sentence-transformers/all-MiniLM-L6-v2",
           backend="onnx",
           model_kwargs={"file_name": "onnx/model_O3.onnx"},
       )
@@ -225,7 +225,7 @@ See this example for quantizing a model to ``int8`` with :doc:`avx512_vnni <opti
 
       from sentence_transformers import SentenceTransformer, export_dynamic_quantized_onnx_model
 
-      model = SentenceTransformer("all-MiniLM-L6-v2", backend="onnx")
+      model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", backend="onnx")
       export_dynamic_quantized_onnx_model(
           model=model,
           quantization_config="avx512_vnni",
@@ -240,7 +240,7 @@ See this example for quantizing a model to ``int8`` with :doc:`avx512_vnni <opti
 
       pull_request_nr = 2 # NOTE: Update this to the number of your pull request
       model = SentenceTransformer(
-          "all-MiniLM-L6-v2",
+          "sentence-transformers/all-MiniLM-L6-v2",
           backend="onnx",
           model_kwargs={"file_name": "onnx/model_qint8_avx512_vnni.onnx"},
           revision=f"refs/pr/{pull_request_nr}",
@@ -251,7 +251,7 @@ See this example for quantizing a model to ``int8`` with :doc:`avx512_vnni <opti
       from sentence_transformers import SentenceTransformer
 
       model = SentenceTransformer(
-          "all-MiniLM-L6-v2",
+          "sentence-transformers/all-MiniLM-L6-v2",
           backend="onnx",
           model_kwargs={"file_name": "onnx/model_qint8_avx512_vnni.onnx"},
       )
@@ -294,7 +294,7 @@ To convert a model to OpenVINO format, you can use the following code:
 
    from sentence_transformers import SentenceTransformer
 
-   model = SentenceTransformer("all-MiniLM-L6-v2", backend="openvino")
+   model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", backend="openvino")
    
    sentences = ["This is an example sentence", "Each sentence is converted"]
    embeddings = model.encode(sentences)
@@ -359,7 +359,7 @@ See this example for quantizing a model to ``int8`` with `static quantization <h
 
       from sentence_transformers import SentenceTransformer, export_static_quantized_openvino_model
 
-      model = SentenceTransformer("all-MiniLM-L6-v2", backend="openvino")
+      model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", backend="openvino")
       export_static_quantized_openvino_model(
           model=model,
           quantization_config=None,
@@ -374,7 +374,7 @@ See this example for quantizing a model to ``int8`` with `static quantization <h
 
       pull_request_nr = 2 # NOTE: Update this to the number of your pull request
       model = SentenceTransformer(
-          "all-MiniLM-L6-v2",
+          "sentence-transformers/all-MiniLM-L6-v2",
           backend="openvino",
           model_kwargs={"file_name": "openvino/openvino_model_qint8_quantized.xml"},
           revision=f"refs/pr/{pull_request_nr}"
@@ -385,7 +385,7 @@ See this example for quantizing a model to ``int8`` with `static quantization <h
       from sentence_transformers import SentenceTransformer
 
       model = SentenceTransformer(
-          "all-MiniLM-L6-v2",
+          "sentence-transformers/all-MiniLM-L6-v2",
           backend="openvino",
           model_kwargs={"file_name": "openvino/openvino_model_qint8_quantized.xml"},
       )

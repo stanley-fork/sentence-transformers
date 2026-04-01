@@ -20,7 +20,7 @@ python train_sts_seed_optimization.py
 OR
 python train_sts_seed_optimization.py pretrained_transformer_model_name seed_count stop_after
 
-python train_sts_seed_optimization.py bert-base-uncased 10 0.3
+python train_sts_seed_optimization.py google-bert/bert-base-uncased 10 0.3
 """
 
 import logging
@@ -47,8 +47,8 @@ logging.basicConfig(
     format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO, handlers=[LoggingHandler()]
 )
 
-# You can specify any huggingface/transformers pre-trained model here, for example, bert-base-uncased, roberta-base, xlm-roberta-base
-model_name = sys.argv[1] if len(sys.argv) > 1 else "bert-base-uncased"
+# You can specify any huggingface/transformers pre-trained model here, for example, google-bert/bert-base-uncased, FacebookAI/roberta-base, FacebookAI/xlm-roberta-base
+model_name = sys.argv[1] if len(sys.argv) > 1 else "google-bert/bert-base-uncased"
 seed_count = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 stop_after = float(sys.argv[3]) if len(sys.argv) > 3 else 0.3
 

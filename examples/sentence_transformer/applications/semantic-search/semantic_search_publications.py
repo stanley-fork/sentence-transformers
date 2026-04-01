@@ -27,7 +27,7 @@ with open(dataset_file) as fIn:
 print(len(papers), "papers loaded")
 
 # We then load the allenai-specter model with SentenceTransformers
-model = SentenceTransformer("allenai-specter")
+model = SentenceTransformer("sentence-transformers/allenai-specter")
 
 # To encode the papers, we must combine the title and the abstracts to a single string
 paper_texts = [paper["title"] + "[SEP]" + paper["abstract"] for paper in papers]

@@ -102,7 +102,7 @@ from datasets import load_dataset
 from sentence_transformers.sentence_transformer.losses import ContrastiveLoss, MultipleNegativesRankingLoss
 from sentence_transformers import SentenceTransformerTrainer, SentenceTransformer
 
-model_name = "stsb-distilbert-base"
+model_name = "sentence-transformers/stsb-distilbert-base"
 model = SentenceTransformer(model_name)
 
 # https://huggingface.co/datasets/sentence-transformers/quora-duplicates
@@ -144,13 +144,13 @@ trainer.train()
 
 Currently the following models trained on Quora Duplicate Questions are available:
 
-- [distilbert-base-nli-stsb-quora-ranking](https://huggingface.co/sentence-transformers/distilbert-base-nli-stsb-quora-ranking): We extended the [distilbert-base-nli-stsb-mean-tokens](https://huggingface.co/sentence-transformers/distilbert-base-nli-stsb-mean-tokens) model and trained it with *OnlineContrastiveLoss* and with *MultipleNegativesRankingLoss* on the Quora Duplicate questions dataset. For the code, see [training_multi_task_learning.py](training_multi_task_learning.py)
-- [distilbert-multilingual-nli-stsb-quora-ranking](https://huggingface.co/sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking): Extension of *distilbert-base-nli-stsb-quora-ranking* to be multi-lingual. Trained on parallel data for 50 languages.
+- [sentence-transformers/distilbert-base-nli-stsb-quora-ranking](https://huggingface.co/sentence-transformers/distilbert-base-nli-stsb-quora-ranking): We extended the [sentence-transformers/distilbert-base-nli-stsb-mean-tokens](https://huggingface.co/sentence-transformers/distilbert-base-nli-stsb-mean-tokens) model and trained it with *OnlineContrastiveLoss* and with *MultipleNegativesRankingLoss* on the Quora Duplicate questions dataset. For the code, see [training_multi_task_learning.py](training_multi_task_learning.py)
+- [sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking](https://huggingface.co/sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking): Extension of *sentence-transformers/distilbert-base-nli-stsb-quora-ranking* to be multi-lingual. Trained on parallel data for 50 languages.
 
 You can load & use pre-trained models like this:
 
 ```python
 from sentence_transformers import SentenceTransformer
 
-model = SentenceTransformer("distilbert-base-nli-stsb-quora-ranking")
+model = SentenceTransformer("sentence-transformers/distilbert-base-nli-stsb-quora-ranking")
 ```

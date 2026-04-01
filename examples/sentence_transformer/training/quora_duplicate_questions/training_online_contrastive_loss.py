@@ -34,7 +34,7 @@ from sentence_transformers.sentence_transformer.training_args import (
 logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 
 # As base model, we use DistilBERT-base that was pre-trained on NLI and STSb data
-model_name = "stsb-distilbert-base"
+model_name = "sentence-transformers/stsb-distilbert-base"
 model = SentenceTransformer(model_name)
 num_train_epochs = 1
 batch_size = 64

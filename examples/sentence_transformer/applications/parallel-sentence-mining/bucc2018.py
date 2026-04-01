@@ -22,8 +22,8 @@ from sklearn.decomposition import PCA
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.sentence_transformer.modules import Dense
 
-# Model we want to use for bitext mining. LaBSE achieves state-of-the-art performance
-model_name = "LaBSE"
+# Model we want to use for bitext mining. sentence-transformers/LaBSE achieves state-of-the-art performance
+model_name = "sentence-transformers/LaBSE"
 model = SentenceTransformer(model_name)
 
 # Input files for BUCC2018 shared task

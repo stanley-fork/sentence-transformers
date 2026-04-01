@@ -32,7 +32,7 @@ def hpo_search_space(trial):
 
 # 4. Define the Model Initialization
 def hpo_model_init(trial):
-    return SentenceTransformer("distilbert-base-uncased")
+    return SentenceTransformer("distilbert/distilbert-base-uncased")
 
 
 # 5. Define the Loss Initialization

@@ -53,7 +53,7 @@ def stsb_bert_tiny_model_openvino() -> SentenceTransformer:
 
 @pytest.fixture()
 def paraphrase_distilroberta_base_v1_model() -> SentenceTransformer:
-    return SentenceTransformer("paraphrase-distilroberta-base-v1")
+    return SentenceTransformer("sentence-transformers/paraphrase-distilroberta-base-v1")
 
 
 @pytest.fixture(scope="session")
@@ -69,12 +69,12 @@ def static_retrieval_mrl_en_v1_model(_static_retrieval_mrl_en_v1_model: Sentence
 
 @pytest.fixture()
 def clip_vit_b_32_model() -> SentenceTransformer:
-    return SentenceTransformer("clip-ViT-B-32")
+    return SentenceTransformer("sentence-transformers/clip-ViT-B-32")
 
 
 @pytest.fixture(scope="session")
 def _distilbert_base_uncased_model() -> SentenceTransformer:
-    word_embedding_model = Transformer("distilbert-base-uncased")
+    word_embedding_model = Transformer("distilbert/distilbert-base-uncased")
     pooling_model = Pooling(word_embedding_model.get_embedding_dimension())
     model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
     return model
@@ -140,7 +140,7 @@ def csr_bert_tiny_model(_csr_bert_tiny_model: SparseEncoder) -> SparseEncoder:
 # Tokenization & Datasets
 @pytest.fixture(scope="session")
 def tokenizer() -> Tokenizer:
-    return Tokenizer.from_pretrained("bert-base-uncased")
+    return Tokenizer.from_pretrained("google-bert/bert-base-uncased")
 
 
 @pytest.fixture

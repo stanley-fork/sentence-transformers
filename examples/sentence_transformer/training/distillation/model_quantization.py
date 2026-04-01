@@ -29,7 +29,7 @@ sentences = train_dataset["sentence1"] + train_dataset["sentence2"]
 sentences = sentences[:10_000]
 test_dataset = load_dataset("sentence-transformers/stsb", split="test")
 
-model_name = "all-mpnet-base-v2"
+model_name = "sentence-transformers/all-mpnet-base-v2"
 
 # 1. Load a baseline model with just fp32 torch
 model = SentenceTransformer(model_name, device="cpu")

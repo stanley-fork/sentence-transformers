@@ -154,7 +154,7 @@ class CachedGISTEmbedLoss(nn.Module):
                 from datasets import Dataset
 
                 model = SentenceTransformer("microsoft/mpnet-base")
-                guide = SentenceTransformer("all-MiniLM-L6-v2")
+                guide = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
                 train_dataset = Dataset.from_dict({
                     "anchor": ["It's nice weather outside today.", "He drove to work."],
                     "positive": ["It's so sunny.", "He took the car to the office."],

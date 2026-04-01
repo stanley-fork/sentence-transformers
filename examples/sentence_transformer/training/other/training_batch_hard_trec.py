@@ -83,8 +83,8 @@ def triplets_from_labeled_dataset(dataset):
     return Dataset.from_list(triplets)
 
 
-# You can specify any huggingface/transformers pre-trained model here, for example, bert-base-uncased, roberta-base, xlm-roberta-base
-model_name = "all-distilroberta-v1"
+# You can specify any huggingface/transformers pre-trained model here, for example, google-bert/bert-base-uncased, FacebookAI/roberta-base, FacebookAI/xlm-roberta-base
+model_name = "sentence-transformers/all-distilroberta-v1"
 
 # Create training dataset
 batch_size = 32

@@ -24,7 +24,7 @@ from sentence_transformers.util.similarity import SimilarityFunction
 logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 
 # Read the dataset
-model_name = "bert-base-uncased"
+model_name = "google-bert/bert-base-uncased"
 num_train_epochs = 1
 batch_size = 16
 output_dir = "output/training_multi-task_" + model_name + "-" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

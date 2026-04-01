@@ -95,7 +95,7 @@ def test_cmnrl_same_grad(
     precision: float,
 ):
     # Given:
-    model = SentenceTransformer("distilbert-base-uncased")
+    model = SentenceTransformer("distilbert/distilbert-base-uncased")
     model.to("cpu")
     optimizer = Adam(model.parameters())
 

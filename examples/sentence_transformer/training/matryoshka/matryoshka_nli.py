@@ -30,7 +30,7 @@ from sentence_transformers.sentence_transformer.losses import MatryoshkaLoss, Mu
 # Set the log level to INFO to get more information
 logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 
-model_name = sys.argv[1] if len(sys.argv) > 1 else "distilroberta-base"
+model_name = sys.argv[1] if len(sys.argv) > 1 else "distilbert/distilroberta-base"
 batch_size = 128  # The larger you select this, the better the results (usually). But it requires more GPU memory
 num_train_epochs = 1
 matryoshka_dims = [768, 512, 256, 128, 64]

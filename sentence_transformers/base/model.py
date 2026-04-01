@@ -303,7 +303,7 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         Example::
 
             >>> from sentence_transformers import SentenceTransformer
-            >>> model = SentenceTransformer("all-MiniLM-L6-v2")
+            >>> model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
             >>> model.supports("text")
             True
             >>> model.supports("image")
@@ -323,7 +323,7 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         Example:
 
             >>> from sentence_transformers import SentenceTransformer, SparseEncoder
-            >>> SentenceTransformer("all-MiniLM-L6-v2").get_model_kwargs()
+            >>> SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2").get_model_kwargs()
             []
             >>> SentenceTransformer("jinaai/jina-embeddings-v4", trust_remote_code=True).get_model_kwargs()
             ['task', 'truncate_dim']

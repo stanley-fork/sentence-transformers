@@ -27,7 +27,7 @@ from lex_rank import degree_centrality_scores
 
 from sentence_transformers import SentenceTransformer
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 # Our input document we want to summarize
 # As example, we take the first section from Wikipedia

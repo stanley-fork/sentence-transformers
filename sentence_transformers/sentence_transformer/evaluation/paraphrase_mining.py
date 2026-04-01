@@ -57,7 +57,7 @@ class ParaphraseMiningEvaluator(BaseEvaluator):
             from sentence_transformers.sentence_transformer.evaluation import ParaphraseMiningEvaluator
 
             # Load a model
-            model = SentenceTransformer('all-mpnet-base-v2')
+            model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
             # Load the Quora Duplicates Mining dataset
             questions_dataset = load_dataset("sentence-transformers/quora-duplicates-mining", "questions", split="dev")

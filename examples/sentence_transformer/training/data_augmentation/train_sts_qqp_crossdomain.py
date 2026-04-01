@@ -44,8 +44,8 @@ logging.basicConfig(
 )
 # /print debug information to stdout
 
-# You can specify any huggingface/transformers pre-trained model here, for example, bert-base-uncased, roberta-base, xlm-roberta-base
-model_name = sys.argv[1] if len(sys.argv) > 1 else "bert-base-uncased"
+# You can specify any huggingface/transformers pre-trained model here, for example, google-bert/bert-base-uncased, FacebookAI/roberta-base, FacebookAI/xlm-roberta-base
+model_name = sys.argv[1] if len(sys.argv) > 1 else "google-bert/bert-base-uncased"
 batch_size = 16
 num_epochs = 1
 max_seq_length = 128

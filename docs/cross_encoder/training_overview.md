@@ -73,7 +73,7 @@ But if instead you want to train from another checkpoint, or from scratch, then 
         reranker = CrossEncoder("google-bert/bert-base-uncased", num_labels=1)
 
         # Multi-class pair classification model (e.g. NLI)
-        classifier = CrossEncoder("xlm-roberta-base", num_labels=3)
+        classifier = CrossEncoder("FacebookAI/xlm-roberta-base", num_labels=3)
 
     For reranking or other regression-style tasks, use ``num_labels=1`` so that the model outputs a single score per pair, which works well with losses like :class:`~sentence_transformers.cross_encoder.losses.BinaryCrossEntropyLoss`. For multi-class or multi-label pair classification, choose ``num_labels`` to match the number of classes and use a suitable classification loss.
 
@@ -378,7 +378,7 @@ Most loss functions can be initialized with just the :class:`~sentence_transform
     from sentence_transformers.cross_encoder.losses import MultipleNegativesRankingLoss
 
     # Load a model to train/finetune
-    model = CrossEncoder("xlm-roberta-base", num_labels=1) # num_labels=1 is for rerankers
+    model = CrossEncoder("FacebookAI/xlm-roberta-base", num_labels=1) # num_labels=1 is for rerankers
 
     # Initialize the MultipleNegativesRankingLoss
     # This loss requires pairs of related texts or triplets

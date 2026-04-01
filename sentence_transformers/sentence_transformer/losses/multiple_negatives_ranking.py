@@ -131,7 +131,7 @@ class MultipleNegativesRankingLoss(nn.Module):
               sample selection. `GISTEmbedLoss` yields a stronger training signal at the cost of some training overhead.
 
         Loss variants from the literature:
-            - Standard InfoNCE / classic MultipleNegativesRankingLoss (query -> doc only), e.g. as in `van den Oord et al. 2018 <https://arxiv.org/abs/1807.03748>`_::
+            - Standard InfoNCE / classic MultipleNegativesRankingLoss (query -> doc only), e.g. as in `van den Oord et al. 2018 <https://huggingface.co/papers/1807.03748>`_::
 
                 loss = MultipleNegativesRankingLoss(
                     model,
@@ -141,7 +141,7 @@ class MultipleNegativesRankingLoss(nn.Module):
 
               This variant is recommended if you are training with (anchor, positive, negative_1, ..., negative_n) n-tuples.
 
-            - Symmetric InfoNCE (query -> doc and doc -> query), e.g. as in `Günther et al. 2024 <https://arxiv.org/abs/2310.19923>`_::
+            - Symmetric InfoNCE (query -> doc and doc -> query), e.g. as in `Günther et al. 2024 <https://huggingface.co/papers/2310.19923>`_::
 
                 loss = MultipleNegativesRankingLoss(
                     model,
@@ -151,7 +151,7 @@ class MultipleNegativesRankingLoss(nn.Module):
 
               This variant may outperform the standard variant in some scenarios.
 
-            - GTE improved contrastive loss (query/doc + same-type negatives), e.g. as in `Li et al. 2023 <https://arxiv.org/abs/2308.03281>`_::
+            - GTE improved contrastive loss (query/doc + same-type negatives), e.g. as in `Li et al. 2023 <https://huggingface.co/papers/2308.03281>`_::
 
                 loss = MultipleNegativesRankingLoss(
                     model,

@@ -98,11 +98,11 @@ Additionally, some research papers (`INSTRUCTOR <https://huggingface.co/papers/2
 ```{eval-rst}
 See the following script as an example of how to train with prompts in practice:
 
-* `training_nq_prompts.py <https://github.com/huggingface/sentence-transformers/blob/main/examples/sentence_transformer/training/prompts/training_nq_prompts.py>`_: This script finetunes `mpnet-base <https://huggingface.co/microsoft/mpnet-base>`_ on 100k query-answer pairs from the `natural-questions <https://huggingface.co/datasets/sentence-transformers/natural-questions>`_ dataset using the :class:`~sentence_transformers.sentence_transformer.losses.CachedMultipleNegativesRankingLoss` loss. The model is evaluated during training using the :class:`~sentence_transformers.sentence_transformer.evaluation.NanoBEIREvaluator`.
+* `training_nq_prompts.py <https://github.com/huggingface/sentence-transformers/blob/main/examples/sentence_transformer/training/prompts/training_nq_prompts.py>`_: This script finetunes `microsoft/mpnet-base <https://huggingface.co/microsoft/mpnet-base>`_ on 100k query-answer pairs from the `natural-questions <https://huggingface.co/datasets/sentence-transformers/natural-questions>`_ dataset using the :class:`~sentence_transformers.sentence_transformer.losses.CachedMultipleNegativesRankingLoss` loss. The model is evaluated during training using the :class:`~sentence_transformers.sentence_transformer.evaluation.NanoBEIREvaluator`.
 
-This script has two variables that affect 1) whether prompts are used and 2) whether prompts are included in the pooling. I have finetuned both ``mpnet-base`` and ``bert-base-uncased`` under the various different settings, resulting in a 0.66% and 0.90% relative improvements on ``NDCG@10`` at no extra cost.
+This script has two variables that affect 1) whether prompts are used and 2) whether prompts are included in the pooling. I have finetuned both ``microsoft/mpnet-base`` and ``google-bert/bert-base-uncased`` under the various different settings, resulting in a 0.66% and 0.90% relative improvements on ``NDCG@10`` at no extra cost.
 
-.. tab:: Experiments with ``mpnet-base``
+.. tab:: Experiments with ``microsoft/mpnet-base``
 
     Running the script under various settings resulted in these checkpoints:
 
@@ -111,7 +111,7 @@ This script has two variables that affect 1) whether prompts are used and 2) whe
 
     .. note::
     
-        ``mpnet-base`` seems to be a tad unstable when training with prompts and excluding those prompts in the pooling: the loss spikes at some point, an effect not observed with e.g. ``bert-base-uncased``.
+        ``microsoft/mpnet-base`` seems to be a tad unstable when training with prompts and excluding those prompts in the pooling: the loss spikes at some point, an effect not observed with e.g. ``google-bert/bert-base-uncased``.
 
     For these two models, the model trained with prompts consistently outperforms the baseline model all throughout training:
 
@@ -141,7 +141,7 @@ This script has two variables that affect 1) whether prompts are used and 2) whe
         print(similarity)
         # => tensor([[0.4725, 0.7339, 0.4369]])
 
-.. tab:: Experiments with ``bert-base-uncased``
+.. tab:: Experiments with ``google-bert/bert-base-uncased``
 
     Running the script under various settings resulted in these checkpoints:
 

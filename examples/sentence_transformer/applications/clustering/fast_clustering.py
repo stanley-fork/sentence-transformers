@@ -20,7 +20,7 @@ from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import community_detection, http_get
 
 # Model for computing sentence embeddings. We use one trained for similar questions detection
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 # We download the Quora Duplicate Questions Dataset (https://www.quora.com/q/quoradata/First-Quora-Dataset-Release-Question-Pairs)
 # and find similar question in it

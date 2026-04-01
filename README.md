@@ -58,7 +58,7 @@ First download a pretrained embedding a.k.a. Sentence Transformer model.
 ```python
 from sentence_transformers import SentenceTransformer
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 ```
 
 Then provide some texts to the model.

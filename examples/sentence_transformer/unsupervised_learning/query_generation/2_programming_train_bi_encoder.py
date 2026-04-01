@@ -31,7 +31,7 @@ with open("generated_queries.tsv", encoding="utf-8") as fIn:
 train_dataset = Dataset.from_list(train_examples)
 
 # Now we create a SentenceTransformer model from scratch
-word_emb = Transformer("distilbert-base-uncased")
+word_emb = Transformer("distilbert/distilbert-base-uncased")
 pooling = Pooling(word_emb.get_embedding_dimension())
 model = SentenceTransformer(modules=[word_emb, pooling])
 

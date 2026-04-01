@@ -19,7 +19,7 @@ logging.basicConfig(
 )
 
 # Some training parameters. For the example, we use a batch_size of 128, a max sentence length (max_seq_length)
-# of 32 word pieces and as model roberta-base
+# of 32 word pieces and as model FacebookAI/roberta-base
 model_name = "FacebookAI/roberta-base"
 batch_size = 128
 max_seq_length = 32

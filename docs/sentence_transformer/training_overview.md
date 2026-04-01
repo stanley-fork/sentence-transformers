@@ -332,7 +332,7 @@ Most loss functions can be initialized with just the :class:`~sentence_transform
     from sentence_transformers.sentence_transformer.losses import CoSENTLoss
 
     # Load a model to train/finetune
-    model = SentenceTransformer("xlm-roberta-base")
+    model = SentenceTransformer("FacebookAI/xlm-roberta-base")
 
     # Initialize the CoSENTLoss
     # This loss requires pairs of text and a float similarity score as a label
@@ -719,7 +719,7 @@ Training on multiple datasets looks like this:
     from sentence_transformers.sentence_transformer.losses import CoSENTLoss, MultipleNegativesRankingLoss, SoftmaxLoss
 
     # 1. Load a model to finetune
-    model = SentenceTransformer("bert-base-uncased")
+    model = SentenceTransformer("google-bert/bert-base-uncased")
 
     # 2. Load several Datasets to train with
     # (anchor, positive)
@@ -844,14 +844,14 @@ In the following table you find the performance for different models and their p
 | [microsoft/mpnet-base](https://huggingface.co/microsoft/mpnet-base)                                                               | 60.99                                      |
 | [nghuyong/ernie-2.0-en](https://huggingface.co/nghuyong/ernie-2.0-en)                                                             | 60.73                                      |
 | [microsoft/deberta-base](https://huggingface.co/microsoft/deberta-base)                                                           | 60.21                                      |
-| [roberta-base](https://huggingface.co/roberta-base)                                                                               | 59.63                                      |
-| [t5-base](https://huggingface.co/t5-base)                                                                                         | 59.21                                      |
-| [bert-base-uncased](https://huggingface.co/bert-base-uncased)                                                                     | 59.17                                      |
-| [distilbert-base-uncased](https://huggingface.co/distilbert-base-uncased)                                                         | 59.03                                      |
+| [FacebookAI/roberta-base](https://huggingface.co/FacebookAI/roberta-base)                                                                     | 59.63                                      |
+| [google-t5/t5-base](https://huggingface.co/google-t5/t5-base)                                                                                         | 59.21                                      |
+| [google-bert/bert-base-uncased](https://huggingface.co/google-bert/bert-base-uncased)                                                         | 59.17                                      |
+| [distilbert/distilbert-base-uncased](https://huggingface.co/distilbert/distilbert-base-uncased)                                               | 59.03                                      |
 | [nreimers/TinyBERT_L-6_H-768_v2](https://huggingface.co/nreimers/TinyBERT_L-6_H-768_v2)                                           | 58.27                                      |
 | [google/t5-v1_1-base](https://huggingface.co/google/t5-v1_1-base)                                                                 | 57.63                                      |
 | [nreimers/MiniLMv2-L6-H768-distilled-from-BERT-Large](https://huggingface.co/nreimers/MiniLMv2-L6-H768-distilled-from-BERT-Large) | 57.31                                      |
-| [albert-base-v2](https://huggingface.co/albert-base-v2)                                                                           | 57.14                                      |
+| [albert/albert-base-v2](https://huggingface.co/albert/albert-base-v2)                                                                           | 57.14                                      |
 | [microsoft/MiniLM-L12-H384-uncased](https://huggingface.co/microsoft/MiniLM-L12-H384-uncased)                                     | 56.79                                      |
 | [microsoft/deberta-v3-base](https://huggingface.co/microsoft/deberta-v3-base)                                                     | 54.46                                      |
 

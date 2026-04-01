@@ -66,7 +66,7 @@ class InformationRetrievalEvaluator(BaseEvaluator):
             logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 
             # Load a model
-            model = SentenceTransformer("all-MiniLM-L6-v2")
+            model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
             # Load the Touche-2020 IR dataset (https://huggingface.co/datasets/mteb/webis-touche2020-v3)
             corpus = load_dataset("mteb/webis-touche2020-v3", "corpus", split="corpus")

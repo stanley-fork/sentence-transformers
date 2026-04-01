@@ -13,7 +13,7 @@ For Semantic Textual Similarity (STS), we want to produce embeddings for all tex
 
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
     # Two lists of sentences
     sentences1 = [
@@ -75,13 +75,13 @@ This value can be changed in a handful of ways:
 
     from sentence_transformers import SentenceTransformer, SimilarityFunction
 
-    model = SentenceTransformer("all-MiniLM-L6-v2", similarity_fn_name=SimilarityFunction.DOT_PRODUCT)
+    model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", similarity_fn_name=SimilarityFunction.DOT_PRODUCT)
 
 2. By setting the value directly on the SentenceTransformer instance::
 
     from sentence_transformers import SentenceTransformer, SimilarityFunction
 
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     model.similarity_fn_name = SimilarityFunction.DOT_PRODUCT
 
 3. By setting the value under the ``"similarity_fn_name"`` key in the ``config_sentence_transformers.json`` file of a saved model. When you save a Sentence Transformer model, this value will be automatically saved as well.
@@ -96,7 +96,7 @@ Sentence Transformers implements two methods to calculate the similarity between
     from sentence_transformers import SentenceTransformer, SimilarityFunction
 
     # Load a pretrained Sentence Transformer model
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
     # Embed some sentences
     sentences = [

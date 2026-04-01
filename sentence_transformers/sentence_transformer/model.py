@@ -114,7 +114,7 @@ class SentenceTransformer(BaseModel, FitMixin):
             from sentence_transformers import SentenceTransformer
 
             # Load a pre-trained SentenceTransformer model
-            model = SentenceTransformer('all-mpnet-base-v2')
+            model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
             # Encode some texts
             sentences = [
@@ -978,7 +978,7 @@ class SentenceTransformer(BaseModel, FitMixin):
 
                 from sentence_transformers import SentenceTransformer
 
-                model = SentenceTransformer("all-mpnet-base-v2")
+                model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
 
                 with model.truncate_embeddings(truncate_dim=16):
                     embeddings_truncated = model.encode(["hello there", "hiya"])

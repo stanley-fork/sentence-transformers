@@ -23,7 +23,7 @@ def fullname(obj) -> str:
         >>> from sentence_transformers.sentence_transformer.losses import MultipleNegativesRankingLoss
         >>> from sentence_transformers import SentenceTransformer
         >>> from sentence_transformers.util import fullname
-        >>> model = SentenceTransformer('all-MiniLM-L6-v2')
+        >>> model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
         >>> loss = MultipleNegativesRankingLoss(model)
         >>> fullname(loss)
         'sentence_transformers.sentence_transformer.losses.multiple_negatives_ranking.MultipleNegativesRankingLoss'

@@ -54,7 +54,7 @@ from sentence_transformers import SentenceTransformer
 
 # 1. Load a model to finetune with 2. (Optional) model card data
 model = SentenceTransformer(
-    "all-MiniLM-L6-v2",
+    "sentence-transformers/all-MiniLM-L6-v2",
     model_card_data=SentenceTransformerModelCardData(
         language="en",
         license="apache-2.0",
@@ -77,7 +77,7 @@ model.add_adapter(peft_config)
 
 ## Loading a Pretrained Adapter
 
-We've created a small adapter model called [tomaarsen/bert-base-uncased-gooaq-peft](https://huggingface.co/tomaarsen/bert-base-uncased-gooaq-peft) on top of the [bert-base-uncased](https://huggingface.co/bert-base-uncased) base model.
+We've created a small adapter model called [tomaarsen/bert-base-uncased-gooaq-peft](https://huggingface.co/tomaarsen/bert-base-uncased-gooaq-peft) on top of the [google-bert/bert-base-uncased](https://huggingface.co/google-bert/bert-base-uncased) base model.
 
 The `adapter_model.safetensors` is 9.44MB, only 2.14% of the size of the base model's `model.safetensors`. To load an adapter model like this one, you can either load this adapter directly:
 
@@ -95,7 +95,7 @@ Or you can load the base model and load the adapter into it:
 ```python
 from sentence_transformers import SentenceTransformer
 
-model = SentenceTransformer("bert-base-uncased")
+model = SentenceTransformer("google-bert/bert-base-uncased")
 model.load_adapter("tomaarsen/bert-base-uncased-gooaq-peft")
 embeddings = model.encode(["This is an example sentence", "Each sentence is converted"])
 print(embeddings.shape)
@@ -108,7 +108,7 @@ In most cases, the former is easiest, as it will work regardless of whether the 
 
 See the following example file for a full example of how PEFT can be used with Sentence Transformers:
 
-- **[training_gooaq_lora.py](training_gooaq_lora.py)**: This is a simple recipe for finetuning [bert-base-uncased](https://huggingface.co/google-bert/bert-base-uncased) on the GooAQ question-answer dataset with the excellent MultipleNegativesRankingLoss, but it has been adapted to use a [LoRA adapter](https://huggingface.co/docs/peft/en/package_reference/lora) from PEFT.
+- **[training_gooaq_lora.py](training_gooaq_lora.py)**: This is a simple recipe for finetuning [google-bert/bert-base-uncased](https://huggingface.co/google-bert/bert-base-uncased) on the GooAQ question-answer dataset with the excellent MultipleNegativesRankingLoss, but it has been adapted to use a [LoRA adapter](https://huggingface.co/docs/peft/en/package_reference/lora) from PEFT.
 
 This script was used to train [tomaarsen/bert-base-uncased-gooaq-peft](https://huggingface.co/tomaarsen/bert-base-uncased-gooaq-peft), which reached 0.4705 NDCG@10 on the NanoBEIR benchmark; only marginally behind [tomaarsen/bert-base-uncased-gooaq](https://huggingface.co/tomaarsen/bert-base-uncased-gooaq) which scores 0.4728 NDCG@10 with a modified script that uses full model finetuning.
 

@@ -66,7 +66,7 @@ class MegaBatchMarginLoss(nn.Module):
                 train_batch_size = 250
                 train_mini_batch_size = 32
 
-                model = SentenceTransformer('all-MiniLM-L6-v2')
+                model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
                 train_dataset = Dataset.from_dict({
                     "anchor": [f"This is sentence number {i}" for i in range(500)],
                     "positive": [f"This is sentence number {i}" for i in range(1, 501)],

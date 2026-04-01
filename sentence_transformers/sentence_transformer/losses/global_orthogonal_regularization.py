@@ -48,7 +48,7 @@ class GlobalOrthogonalRegularizationLoss(nn.Module):
                 The EmbeddingGemma paper uses "sum".
 
         References:
-            - For further details, see: https://arxiv.org/abs/1708.06320 or https://arxiv.org/abs/2509.20354.
+            - For further details, see: https://huggingface.co/papers/1708.06320 or https://huggingface.co/papers/2509.20354.
               The latter paper uses the equivalent of GOR with ``mean_weight=0.0`` and ``aggregation="sum"``.
 
         Inputs:

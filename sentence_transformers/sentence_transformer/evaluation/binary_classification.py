@@ -54,7 +54,7 @@ class BinaryClassificationEvaluator(BaseEvaluator):
             from datasets import load_dataset
 
             # Load a model
-            model = SentenceTransformer('all-mpnet-base-v2')
+            model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
             # Load a dataset with two text columns and a class label column (https://huggingface.co/datasets/sentence-transformers/quora-duplicates)
             eval_dataset = load_dataset("sentence-transformers/quora-duplicates", "pair-class", split="train[-1000:]")

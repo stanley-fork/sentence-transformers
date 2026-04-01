@@ -58,7 +58,7 @@ class TripletEvaluator(BaseEvaluator):
             from datasets import load_dataset
 
             # Load a model
-            model = SentenceTransformer('all-mpnet-base-v2')
+            model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
             # Load a dataset with (anchor, positive, negative) triplets
             dataset = load_dataset("sentence-transformers/all-nli", "triplet", split="dev")

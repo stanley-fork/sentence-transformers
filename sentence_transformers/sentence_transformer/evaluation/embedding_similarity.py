@@ -56,7 +56,7 @@ class EmbeddingSimilarityEvaluator(BaseEvaluator):
             from sentence_transformers.sentence_transformer.evaluation import EmbeddingSimilarityEvaluator, SimilarityFunction
 
             # Load a model
-            model = SentenceTransformer('all-mpnet-base-v2')
+            model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
             # Load the STSB dataset (https://huggingface.co/datasets/sentence-transformers/stsb)
             eval_dataset = load_dataset("sentence-transformers/stsb", split="validation")

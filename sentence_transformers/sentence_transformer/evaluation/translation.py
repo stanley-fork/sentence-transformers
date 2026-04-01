@@ -46,7 +46,7 @@ class TranslationEvaluator(BaseEvaluator):
             from datasets import load_dataset
 
             # Load a model
-            model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
+            model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
 
             # Load a parallel sentences dataset
             dataset = load_dataset("sentence-transformers/parallel-sentences-news-commentary", "en-nl", split="train[:1000]")

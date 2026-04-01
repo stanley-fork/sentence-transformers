@@ -42,9 +42,9 @@ logger = logging.getLogger(__name__)
 
 
 # The teacher model is monolingual, we use it for English embeddings
-teacher_model_name = "paraphrase-distilroberta-base-v2"
+teacher_model_name = "sentence-transformers/paraphrase-distilroberta-base-v2"
 # The student model is multilingual, we train it such that embeddings of non-English texts mimic the teacher model's English embeddings
-student_model_name = "xlm-roberta-base"
+student_model_name = "FacebookAI/xlm-roberta-base"
 
 student_max_seq_length = 128  # Student model max. lengths for inputs (number of word pieces)
 train_batch_size = 64  # Batch size for training

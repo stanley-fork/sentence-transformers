@@ -19,7 +19,7 @@ logging.basicConfig(
 # Some training parameters. We use a batch size of 16, for every positive example we include 8-1=7 negative examples
 # Sentences are truncated to 75 word pieces
 # Training parameters
-model_name = "distilbert-base-uncased"
+model_name = "distilbert/distilbert-base-uncased"
 batch_size = 128
 epochs = 1
 max_seq_length = 75

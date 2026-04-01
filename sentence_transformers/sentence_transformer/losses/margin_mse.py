@@ -93,7 +93,7 @@ class MarginMSELoss(nn.Module):
                 from datasets import Dataset
 
                 student_model = SentenceTransformer("microsoft/mpnet-base")
-                teacher_model = SentenceTransformer("all-mpnet-base-v2")
+                teacher_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
                 train_dataset = Dataset.from_dict({
                     "query": ["It's nice weather outside today.", "He drove to work."],
                     "passage1": ["It's so sunny.", "He took the car to work."],
@@ -127,7 +127,7 @@ class MarginMSELoss(nn.Module):
                 import torch
 
                 student_model = SentenceTransformer("microsoft/mpnet-base")
-                teacher_model = SentenceTransformer("all-mpnet-base-v2")
+                teacher_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
 
                 train_dataset = Dataset.from_dict(
                     {

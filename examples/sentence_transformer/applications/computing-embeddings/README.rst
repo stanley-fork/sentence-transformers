@@ -14,7 +14,7 @@ Once you have `installed <../../../../docs/installation.html>`_ Sentence Transfo
    from sentence_transformers import SentenceTransformer
 
    # 1. Load a pretrained Sentence Transformer model
-   model = SentenceTransformer("all-MiniLM-L6-v2")
+   model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
    # The sentences to encode
    sentences = [
@@ -48,7 +48,7 @@ The first step is to load a pretrained Sentence Transformer model. You can use a
 
    from sentence_transformers import SentenceTransformer
 
-   model = SentenceTransformer("all-mpnet-base-v2")
+   model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
    # Alternatively, you can pass a path to a local model directory:
    model = SentenceTransformer("output/models/mpnet-base-finetuned-all-nli")
 
@@ -56,7 +56,7 @@ The model will automatically be placed on the most performant available device, 
 
 ::
 
-   model = SentenceTransformer("all-mpnet-base-v2", device="cuda")
+   model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2", device="cuda")
 
 Calculating Embeddings
 ----------------------
@@ -129,7 +129,7 @@ Each model has a maximum sequence length under ``model.max_seq_length``, which i
 
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     print("Max Sequence Length:", model.max_seq_length)
     # => Max Sequence Length: 256
 
@@ -156,7 +156,7 @@ You can use :meth:`SentenceTransformer.encode() <sentence_transformers.sentence_
         from sentence_transformers import SentenceTransformer
 
         def main():
-            model = SentenceTransformer("all-MiniLM-L6-v2")
+            model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
             # Encode with multiple GPUs
             embeddings = model.encode(
                 inputs,
@@ -171,7 +171,7 @@ You can use :meth:`SentenceTransformer.encode() <sentence_transformers.sentence_
         from sentence_transformers import SentenceTransformer
 
         def main():
-            model = SentenceTransformer("all-MiniLM-L6-v2")
+            model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
             # Start a multi-process pool with multiple GPUs
             pool = model.start_multi_process_pool(target_devices=["cuda:0", "cuda:1"])
             # Encode with multiple GPUs

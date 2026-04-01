@@ -37,7 +37,7 @@ from annoy import AnnoyIndex
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import http_get, semantic_search
 
-model_name = "quora-distilbert-multilingual"
+model_name = "sentence-transformers/quora-distilbert-multilingual"
 model = SentenceTransformer(model_name)
 
 url = "http://qim.fs.quoracdn.net/quora_duplicate_questions.tsv"

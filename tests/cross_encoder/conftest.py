@@ -9,7 +9,7 @@ from sentence_transformers import CrossEncoder
 
 @pytest.fixture()
 def distilroberta_base_ce_model() -> CrossEncoder:
-    return CrossEncoder("distilroberta-base", num_labels=1)
+    return CrossEncoder("distilbert/distilroberta-base", num_labels=1)
 
 
 @pytest.fixture(scope="session")

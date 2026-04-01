@@ -23,7 +23,7 @@ from sentence_transformers.util.similarity import SimilarityFunction
 # Set the log level to INFO to get more information
 logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 
-model_name = "distilroberta-base"
+model_name = "distilbert/distilroberta-base"
 num_epochs = 1
 batch_size = 128
 max_seq_length = 128
