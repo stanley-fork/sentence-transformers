@@ -40,6 +40,11 @@ try:
 except ImportError:
     _av = None
 
+try:
+    import torchcodec as _torchcodec
+except ImportError:
+    _torchcodec = None
+
 if not is_training_available():
     pytest.skip(
         reason='Sentence Transformers was not installed with the `["train"]` extra.',
@@ -275,19 +280,23 @@ class TestSavePredictExampleAssets:
             assert data.usage_examples_display[1] == "assets/image_0.jpg"
             assert data.usage_examples_display[2] == "world"
 
-    def test_audio_dict_saved_as_wav(self) -> None:
+    def test_audio_dict_saved_as_wav(self, tmp_path) -> None:
         """AudioDict saved to assets/ as .wav file."""
-        pytest.importorskip("torchaudio")
+        torchaudio = pytest.importorskip("torchaudio")
+        # Verify torchaudio can actually save (may fail without a backend like soundfile/sox)
+        try:
+            torchaudio.save(str(tmp_path / "check.wav"), torch.randn(1, 100), 16000)
+        except Exception:
+            pytest.skip("torchaudio backend cannot save wav files")
 
         data = _make_model_card_data()
         audio = {"array": np.random.randn(16000).astype(np.float32), "sampling_rate": 16000}
-        with tempfile.TemporaryDirectory() as tmpdir:
-            data.save_dir = tmpdir
-            data.usage_examples = [audio]
-            data.save_usage_example_assets()
+        data.save_dir = str(tmp_path)
+        data.usage_examples = [audio]
+        data.save_usage_example_assets()
 
-            assert data.usage_examples_display == ["assets/audio_0.wav"]
-            assert os.path.isfile(os.path.join(tmpdir, "assets", "audio_0.wav"))
+        assert data.usage_examples_display == ["assets/audio_0.wav"]
+        assert (tmp_path / "assets" / "audio_0.wav").is_file()
 
     def test_video_dict_saved_as_mp4(self) -> None:
         """VideoDict saved to assets/ as .mp4 file."""
@@ -1077,7 +1086,9 @@ class TestFormatAndSaveExampleVideoDecoder:
             assert counter == 0
 
 
-_can_test_video_dataset = is_datasets_available() and VideoFeature is not None and _av is not None
+_can_test_video_dataset = (
+    is_datasets_available() and VideoFeature is not None and _av is not None and _torchcodec is not None
+)
 
 
 @contextmanager
@@ -1114,10 +1125,7 @@ class TestSetMultimodalPredictExampleVideo:
 
     def test_video_column_detected(self, stsb_bert_tiny_model: SentenceTransformer) -> None:
         """A model supporting 'video' modality picks VideoDecoder examples from Video columns."""
-        try:
-            from torchcodec.decoders import VideoDecoder
-        except (ImportError, OSError):
-            pytest.skip("torchcodec VideoDecoder not available")
+        from torchcodec.decoders import VideoDecoder
 
         with _create_video_dataset(n=5) as ds:
             model = stsb_bert_tiny_model
