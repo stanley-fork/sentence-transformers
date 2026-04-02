@@ -563,9 +563,12 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         """
         list_types = (list, tuple)
         if is_datasets_available():
-            from datasets import Column
+            try:
+                from datasets import Column
 
-            list_types += (Column,)
+                list_types += (Column,)
+            except ImportError:
+                pass
         return not isinstance(inputs, list_types)
 
     def save(

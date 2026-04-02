@@ -24,7 +24,6 @@ from transformers import (
     LongT5Config,
     M2M100Config,
     MarianConfig,
-    MoonshineConfig,
     MT5Config,
     PegasusConfig,
     PegasusXConfig,
@@ -35,7 +34,6 @@ from transformers import (
     ProphetNetConfig,
     SwitchTransformersConfig,
     T5Config,
-    TimmWrapperConfig,
     UdopConfig,
     UMT5Config,
     WhisperConfig,
@@ -88,6 +86,22 @@ try:
 except ImportError:
 
     class T5GemmaConfig:
+        pass
+
+
+try:
+    from transformers import MoonshineConfig
+except ImportError:
+
+    class MoonshineConfig:
+        pass
+
+
+try:
+    from transformers import TimmWrapperConfig
+except ImportError:
+
+    class TimmWrapperConfig:
         pass
 
 
@@ -458,6 +472,8 @@ class Transformer(InputModule):
     :class:`~sentence_transformers.sentence_transformer.model.SentenceTransformer`, :class:`~sentence_transformers.sparse_encoder.model.SparseEncoder`,
     or :class:`~sentence_transformers.cross_encoder.model.CrossEncoder` pipeline.
 
+    TODO: Mention the variable length FA2 speed improvements. Perhaps here + the SentenceTransformer efficiency docs?
+
     Args:
         model_name_or_path (str): Hugging Face model name or path to a local model directory.
         transformer_task (str, optional): The task determining which ``AutoModel``-like class to load.
@@ -764,7 +780,7 @@ class Transformer(InputModule):
             self.transformer_task != "feature-extraction"
             or "text" not in self.modality_config
             or self.backend != "torch"
-            or not self.model.is_backend_compatible()
+            or not getattr(self.model, "is_backend_compatible", lambda: False)()
             or any(params["method"] != "forward" for params in self.modality_config.values())
         ):
             return False
