@@ -160,14 +160,11 @@ class BaseTrainingArguments(TransformersTrainingArguments):
         )
 
         # In transformers <v4.54.1, the superclass doesn't yet auto-parse dict fields from CLI strings
-        if isinstance(self.prompts, str) and self.prompts:
+        if isinstance(self.prompts, str):
             try:
                 self.prompts = json.loads(self.prompts)
             except json.JSONDecodeError:
-                raise ValueError(
-                    "The `prompts` argument must be a dictionary mapping prompt names to prompt strings. "
-                    "A stringified dictionary also works."
-                )
+                pass
 
         self.learning_rate_mapping = self.learning_rate_mapping if self.learning_rate_mapping is not None else {}
         if isinstance(self.learning_rate_mapping, str):
