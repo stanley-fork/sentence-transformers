@@ -555,7 +555,6 @@ def infer_modality(
             )
         case dict() if sample:
             # Multimodal dict: keys are modality names (sorted for consistent route lookups)
-            # TODO: Check if the tests are okay with this:
             valid_modalities = {"text", "image", "audio", "video"}
             invalid_keys = set(sample.keys()) - valid_modalities
             if invalid_keys:

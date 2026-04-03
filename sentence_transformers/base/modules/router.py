@@ -34,7 +34,6 @@ class Router(InputModule):
         route_mappings: dict[tuple[str | None, str | tuple[str, ...] | None], str] | None = None,
     ) -> None:
         r"""
-        TODO: There's no proper documentation of using Router to make multimodal models yet
         This model allows creating flexible SentenceTransformer models that dynamically route inputs to different
         processing modules based on:
 
