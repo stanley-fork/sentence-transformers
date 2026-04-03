@@ -261,26 +261,26 @@ def test_router_is_alias_for_asym():
 
 
 def test_router_backwards_compatibility(static_embedding_model):
-    """Test that passing task types as dictionary keys raises a helpful error."""
+    """Test that passing task types as dictionary keys still works via backwards compatibility."""
 
     asym_model = Asym({"query": [static_embedding_model], "document": [static_embedding_model]})
     model = SentenceTransformer(modules=[asym_model])
 
-    with pytest.raises(
-        ValueError,
-        match=r"Passing task types as dictionary keys \(e\.g\. \{'query': ...\}\) is no longer supported\. Instead, pass the inputs directly and use the `task` parameter",
-    ):
-        model.encode([{"query": "What is the capital of France?"}, {"query": "The capital of France is Paris."}])
+    # Single task type dicts are silently unwrapped by Router.preprocess
+    query_embeddings = model.encode(
+        [{"query": "What is the capital of France?"}, {"query": "The capital of France is Paris."}]
+    )
+    assert query_embeddings.shape == (2, model.get_embedding_dimension())
 
-    with pytest.raises(
-        ValueError,
-        match=r"Passing task types as dictionary keys \(e\.g\. \{'document': ...\}\) is no longer supported\. Instead, pass the inputs directly and use the `task` parameter",
-    ):
-        model.encode([{"document": "What is the capital of France?"}, {"document": "The capital of France is Paris."}])
+    doc_embeddings = model.encode(
+        [{"document": "What is the capital of France?"}, {"document": "The capital of France is Paris."}]
+    )
+    assert doc_embeddings.shape == (2, model.get_embedding_dimension())
 
+    # Mixed task type dicts in a single batch still raise an error
     with pytest.raises(
         ValueError,
-        match=r"Passing task types as dictionary keys \(e\.g\. \{'(query|document)': ...\}\) is no longer supported\. Instead, pass the inputs directly and use the `task` parameter",
+        match=r"You cannot pass a list of dictionaries with different task types",
     ):
         model.encode(
             [
