@@ -52,7 +52,9 @@ class SentenceTransformer(BaseModel, FitMixin):
             computation. If None, checks if a GPU can be used. Defaults to None.
         prompts (dict[str, str], optional): A dictionary with prompts for the model. The key is the prompt name,
             the value is the prompt text. The prompt text will be prepended before any text to encode. For example:
-            ``{"query": "query: ", "passage": "passage: "}``. Defaults to None.
+            ``{"query": "query: ", "passage": "passage: "}``. If a model has saved prompts, you can override
+            them by passing your own, or pass ``{"query": "", "document": ""}`` to disable them.
+            Defaults to None.
         default_prompt_name (str, optional): The name of the prompt that should be used by default. If not set,
             no prompt will be applied. Defaults to None.
         cache_folder (str, optional): Path to store models. Can also be set by the ``SENTENCE_TRANSFORMERS_HOME``
@@ -136,7 +138,7 @@ class SentenceTransformer(BaseModel, FitMixin):
 
     model_card_data_class = SentenceTransformerModelCardData
     default_huggingface_organization: str | None = "sentence-transformers"
-    _default_prompts: dict[str, str] = {"query": "", "document": ""}
+    _default_prompts: dict[str, str | None] = {"query": None, "document": None}
 
     @deprecated_kwargs(tokenizer_kwargs="processor_kwargs")
     def __init__(

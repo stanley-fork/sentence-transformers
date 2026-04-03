@@ -65,8 +65,9 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
     model_card_data_class = BaseModelCardData
     # The default Hugging Face organization to prepend to short model names.
     default_huggingface_organization: str | None = None
-    # Default prompts to initialize for new model instances (e.g. {"query": "", "document": ""}).
-    _default_prompts: dict[str, str] = {}
+    # Default prompts to initialize for new model instances. Use None as the value for prompts
+    # that should be filled by the saved model config; empty string "" means intentionally blank.
+    _default_prompts: dict[str, str | None] = {}
     # The placeholder model ID in model card templates that gets replaced with the actual model ID.
     _model_card_model_id_placeholder: str = "sentence_transformers_model_id"
 
@@ -102,7 +103,9 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
                 for computation. If None, checks if a GPU can be used. Defaults to None.
             prompts (dict[str, str], optional): A dictionary with prompts for the model. The key is the prompt
                 name, the value is the prompt text. The prompt text will be prepended before any text during inference.
-                For example: ``{"query": "query: ", "passage": "passage: "}``. Defaults to None.
+                For example: ``{"query": "query: ", "passage": "passage: "}``. If a model has saved prompts, you
+                can override them by passing your own, or pass ``{"query": "", "document": ""}`` to disable them.
+                Defaults to None.
             default_prompt_name (str, optional): The name of the prompt that should be used by default. If not
                 set, no prompt will be applied. Defaults to None.
             cache_folder (str, optional): Path to store models. Can also be set by the
@@ -219,14 +222,18 @@ class BaseModel(nn.Sequential, PeftAdapterMixin, ABC):
         self.to(device)
         self.is_hpu_graph_enabled = False
 
-        # Pass the model to the model card data for later use
-        self.model_card_data.register_model(self)
-
         # Validate prompts after model loading (which may have merged config prompts)
         self._validate_prompts()
 
+        # Pass the model to the model card data for later use
+        self.model_card_data.register_model(self)
+
     def _validate_prompts(self) -> None:
         """Validate prompt configuration and log prompt information."""
+        # Replace any remaining None prompts (not filled by saved config) with empty strings
+        for key, value in self.prompts.items():
+            if value is None:
+                self.prompts[key] = ""
         if self.default_prompt_name is not None and self.default_prompt_name not in self.prompts:
             raise ValueError(
                 f"Default prompt name '{self.default_prompt_name}' not found in the configured prompts "
@@ -1174,11 +1181,18 @@ This pull request has been automatically generated to add {self.__class__.__name
         return modules, module_kwargs
 
     def _parse_model_config(self, model_config: dict[str, Any]) -> None:
+        """Parse model configuration and merge saved prompts/defaults with user-provided values.
+
+        User-provided prompts and default_prompt_name take precedence over saved config values.
+        Saved prompts are only used for keys not already present in ``self.prompts``, or where the
+        current value is ``None`` (i.e. a default placeholder, not yet filled by the user or config).
+        Empty string ``""`` is treated as an intentional user-provided value and will not be overwritten.
+        """
         # Only update prompts that aren't already set by the user or defaults
         for prompt_name, prompt_text in model_config.get("prompts", {}).items():
-            if prompt_name not in self.prompts or not self.prompts[prompt_name]:
+            if prompt_name not in self.prompts or self.prompts[prompt_name] is None:
                 self.prompts[prompt_name] = prompt_text
-        if not self.default_prompt_name:
+        if self.default_prompt_name is None:
             self.default_prompt_name = model_config.get("default_prompt_name", None)
 
     def _load_converted_modules(
