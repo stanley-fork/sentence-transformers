@@ -1739,6 +1739,8 @@ class BaseModelCardData(CardData):
 
     def get_codecarbon_data(self) -> dict[Literal["co2_eq_emissions"], dict[str, Any]]:
         emissions_data = self.code_carbon_callback.tracker._prepare_emissions_data()
+        # TODO: Can we alternatively also get hours_used from the training logs? And also Training Time without Evaluation?
+        # Or perhaps just Training Time (no evaluation) + Evaluation Time?
         results = {
             "co2_eq_emissions": {
                 # * 1000 to convert kg to g
