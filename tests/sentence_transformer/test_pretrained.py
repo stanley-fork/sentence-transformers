@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import gc
+from typing import Any
 
 import numpy as np
 import pytest
 import torch
+import transformers
 
 from sentence_transformers import SentenceTransformer
+
+IS_TRANSFORMERS_V5 = int(transformers.__version__.split(".")[0]) >= 5
 
 QUERY = "Which planet is known as the Red Planet?"
 DOCUMENTS = [
@@ -16,95 +20,153 @@ DOCUMENTS = [
     "Saturn, famous for its rings, is sometimes mistaken for the Red Planet.",
 ]
 
-MODELS_TO_SIMILARITIES = {
-    "Alibaba-NLP/gte-base-en-v1.5": [0.52348, 0.78222, 0.52774, 0.63725],
-    "Alibaba-NLP/gte-large-en-v1.5": [0.6413, 0.87381, 0.67332, 0.77191],
-    "Alibaba-NLP/gte-multilingual-base": [0.63711, 0.92462, 0.78728, 0.75058],
-    "BAAI/bge-base-en-v1.5": [0.56823, 0.85511, 0.73461, 0.69612],
-    "BAAI/bge-large-en-v1.5": [0.53004, 0.81202, 0.68899, 0.7095],
-    "BAAI/bge-large-zh-v1.5": [0.46354, 0.72705, 0.68646, 0.67346],
-    "BAAI/bge-m3": [0.40965, 0.71124, 0.64807, 0.65035],
-    "BAAI/bge-small-en-v1.5": [0.60098, 0.8291, 0.77927, 0.70905],
-    "LazarusNLP/all-indo-e5-small-v4": [0.37193, 0.76811, 0.6399, 0.57756],
-    "MongoDB/mdbr-leaf-ir": [0.39613, 0.62065, 0.54764, 0.50337],
-    "NeuML/pubmedbert-base-embeddings": [0.5366, 0.70684, 0.59512, 0.61546],
-    "NovaSearch/stella_en_400M_v5": [0.55998, 0.83601, 0.69783, 0.70312],
-    "Qwen/Qwen3-Embedding-0.6B": [0.48113, 0.69014, 0.58377, 0.66434],
-    "RikkaBotan/quantized-stable-static-embedding-fast-retrieval-mrl-en": [0.20859, 0.67225, 0.55774, 0.63499],
-    "RikkaBotan/stable-static-embedding-fast-retrieval-mrl-en": [0.21659, 0.67834, 0.54613, 0.64053],
-    "Snowflake/snowflake-arctic-embed-l-v2.0": [0.33782, 0.70994, 0.55318, 0.5992],
-    "Snowflake/snowflake-arctic-embed-m": [0.29498, 0.46004, 0.37611, 0.37525],
-    "TencentBAC/Conan-embedding-v1": [0.718, 0.84677, 0.81216, 0.7981],
-    "WhereIsAI/UAE-Large-V1": [0.51777, 0.83044, 0.66854, 0.70359],
-    "codefuse-ai/F2LLM-v2-0.6B-Preview": [0.20653, 0.55272, 0.3899, 0.50644],
-    "cointegrated/rubert-tiny2": [0.70843, 0.8219, 0.74427, 0.80358],
-    "dangvantuan/vietnamese-document-embedding": [0.4308, 0.87254, 0.62065, 0.49873],
-    "google/embeddinggemma-300m": [0.30082, 0.6361, 0.4927, 0.48888],
-    "ibm-granite/granite-embedding-english-r2": [0.79473, 0.92265, 0.86995, 0.90711],
-    "ibm-granite/granite-embedding-small-english-r2": [0.8018, 0.92562, 0.8903, 0.88743],
-    "intfloat/e5-base-v2": [0.79724, 0.90021, 0.8485, 0.86522],
-    "intfloat/e5-large-v2": [0.77354, 0.85856, 0.83334, 0.84103],
-    "intfloat/e5-small-v2": [0.81278, 0.91429, 0.86806, 0.87815],
-    "intfloat/multilingual-e5-base": [0.79078, 0.87654, 0.85599, 0.86601],
-    "intfloat/multilingual-e5-large": [0.76823, 0.87257, 0.8288, 0.83204],
-    "intfloat/multilingual-e5-large-instruct": [0.79779, 0.89875, 0.85599, 0.85365],
-    "intfloat/multilingual-e5-small": [0.81146, 0.90638, 0.87144, 0.85721],
-    "jhgan/ko-sroberta-multitask": [0.37259, 0.55964, 0.47563, 0.60787],
-    "jinaai/jina-clip-v2": [0.40651, 0.76659, 0.67154, 0.65946],
-    "jinaai/jina-embeddings-v2-base-de": [0.38487, 0.755, 0.68292, 0.6422],
-    "jinaai/jina-embeddings-v2-small-en": [0.76039, 0.91308, 0.88758, 0.85223],
-    "jinaai/jina-embeddings-v5-text-nano-retrieval": [0.50366, 0.79225, 0.61306, 0.57663],
-    "jinaai/jina-embeddings-v5-text-small-retrieval": [0.45699, 0.77915, 0.60388, 0.62656],
-    "krlvi/sentence-msmarco-bert-base-dot-v5-nlpl-code_search_net": [0.45616, 0.82503, 0.73758, 0.69932],
-    "lightonai/modernbert-embed-large": [0.72093, 0.88348, 0.79301, 0.84273],
-    "minishlab/potion-base-8M": [0.44635, 0.69271, 0.69851, 0.61344],
-    "minishlab/potion-multilingual-128M": [0.36266, 0.6547, 0.69237, 0.71587],
-    "mixedbread-ai/mxbai-embed-large-v1": [0.57955, 0.81607, 0.72447, 0.73377],
-    "nomic-ai/modernbert-embed-base": [0.66453, 0.8449, 0.75102, 0.79015],
-    "nomic-ai/nomic-embed-text-v1": [0.5299, 0.83191, 0.69565, 0.74845],
-    "nomic-ai/nomic-embed-text-v1.5": [0.65113, 0.88814, 0.79888, 0.81393],
-    "nomic-ai/nomic-embed-text-v2-moe": [0.32734, 0.75477, 0.59748, 0.69686],
-    "perplexity-ai/pplx-embed-v1-0.6b": [0.36222, 0.78264, 0.56755, 0.63213],
-    "pritamdeka/S-PubMedBert-MS-MARCO": [0.88165, 0.95007, 0.90867, 0.91442],
-    "sentence-transformers-testing/stsb-bert-tiny-safetensors": [0.58952, 0.65965, 0.68427, 0.70859],
-    "sentence-transformers/LaBSE": [0.33915, 0.63683, 0.42413, 0.51478],
-    "sentence-transformers/all-MiniLM-L12-v2": [0.44697, 0.73776, 0.67435, 0.63074],
-    "sentence-transformers/all-MiniLM-L6-v2": [0.46469, 0.81146, 0.72792, 0.75019],
-    "sentence-transformers/all-mpnet-base-v2": [0.46544, 0.7783, 0.69194, 0.70103],
-    "sentence-transformers/all-roberta-large-v1": [0.44306, 0.79517, 0.70153, 0.6759],
-    "sentence-transformers/distilbert-base-nli-mean-tokens": [0.28534, 0.77129, 0.57375, 0.66694],
-    "sentence-transformers/distiluse-base-multilingual-cased-v1": [0.41146, 0.61813, 0.6136, 0.54644],
-    "sentence-transformers/distiluse-base-multilingual-cased-v2": [0.41149, 0.65171, 0.59912, 0.59548],
-    "sentence-transformers/msmarco-MiniLM-L12-cos-v5": [0.44782, 0.7199, 0.51404, 0.49142],
-    "sentence-transformers/msmarco-MiniLM-L6-v3": [0.41319, 0.73318, 0.57321, 0.60289],
-    "sentence-transformers/msmarco-bert-base-dot-v5": [163.48624, 172.62042, 169.48434, 169.65317],
-    "sentence-transformers/multi-qa-MiniLM-L6-cos-v1": [0.4574, 0.76815, 0.72746, 0.70799],
-    "sentence-transformers/multi-qa-mpnet-base-dot-v1": [18.6228, 25.37649, 24.27628, 23.72677],
-    "sentence-transformers/paraphrase-MiniLM-L3-v2": [0.42318, 0.6579, 0.63369, 0.58735],
-    "sentence-transformers/paraphrase-MiniLM-L6-v2": [0.4128, 0.64253, 0.67191, 0.62637],
-    "sentence-transformers/paraphrase-mpnet-base-v2": [0.37228, 0.7243, 0.65537, 0.5957],
-    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": [0.45344, 0.72604, 0.63646, 0.66457],
-    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2": [0.39203, 0.73921, 0.70264, 0.61803],
-    "sentence-transformers/static-retrieval-mrl-en-v1": [0.27474, 0.72625, 0.61197, 0.65317],
-    "sentence-transformers/static-similarity-mrl-multilingual-v1": [0.27946, 0.65648, 0.51909, 0.5041],
-    "sentence-transformers/stsb-roberta-base": [0.18017, 0.56902, 0.55228, 0.3553],
-    "sergeyzh/BERTA": [0.31218, 0.73588, 0.59312, 0.53296],
-    "shibing624/text2vec-base-chinese": [0.49312, 0.7501, 0.71148, 0.7345],
-    "snunlp/KR-SBERT-V40K-klueNLI-augSTS": [0.69023, 0.83454, 0.79258, 0.8302],
-    "thenlper/gte-base": [0.83165, 0.93071, 0.88769, 0.89534],
-    "thenlper/gte-large": [0.81024, 0.93618, 0.88395, 0.89457],
-    "thenlper/gte-small": [0.83949, 0.93082, 0.90772, 0.90319],
+# Requires these optional dependencies:
+# timm pillow einops
+
+_BF16_EAGER = {"model_kwargs": {"torch_dtype": torch.bfloat16, "attn_implementation": "eager"}}
+MODELS_TO_SIMILARITIES_BF16_SDPA: dict[str, tuple[list[float], dict[str, Any]]] = {
+    **(
+        {}
+        if IS_TRANSFORMERS_V5
+        else {
+            "Alibaba-NLP/gte-base-en-v1.5": ([0.52453, 0.78257, 0.52955, 0.63619], {"trust_remote_code": True}),
+            "Alibaba-NLP/gte-large-en-v1.5": ([0.63957, 0.87339, 0.67198, 0.77102], {"trust_remote_code": True}),
+            "Alibaba-NLP/gte-multilingual-base": ([0.63415, 0.92388, 0.78641, 0.74917], {"trust_remote_code": True}),
+        }
+    ),
+    "BAAI/bge-base-en-v1.5": ([0.56749, 0.85499, 0.73467, 0.69584], {}),
+    "BAAI/bge-large-en-v1.5": ([0.53033, 0.81206, 0.68978, 0.71022], {}),
+    "BAAI/bge-large-zh-v1.5": ([0.4627, 0.7272, 0.68818, 0.67414], {}),
+    "BAAI/bge-m3": ([0.41025, 0.71249, 0.64761, 0.65188], {}),
+    "BAAI/bge-small-en-v1.5": ([0.60191, 0.82845, 0.7786, 0.70781], {}),
+    "LazarusNLP/all-indo-e5-small-v4": ([0.37112, 0.76753, 0.63996, 0.57649], {}),
+    "MongoDB/mdbr-leaf-ir": ([0.39702, 0.62105, 0.54831, 0.50404], {}),
+    "NeuML/pubmedbert-base-embeddings": ([0.53657, 0.70515, 0.59338, 0.61632], {}),
+    **(
+        {}
+        if IS_TRANSFORMERS_V5
+        else {
+            "NovaSearch/stella_en_400M_v5": (
+                [0.55885, 0.83595, 0.69729, 0.70293],
+                {"trust_remote_code": True, **_BF16_EAGER},
+            ),
+        }
+    ),
+    "Qwen/Qwen3-Embedding-0.6B": ([0.4838, 0.69335, 0.58793, 0.6647], {}),
+    "RikkaBotan/quantized-stable-static-embedding-fast-retrieval-mrl-en": (
+        [0.20859, 0.67225, 0.55774, 0.63499],
+        {"trust_remote_code": True},
+    ),
+    "RikkaBotan/stable-static-embedding-fast-retrieval-mrl-en": (
+        [0.21659, 0.67834, 0.54613, 0.64053],
+        {"trust_remote_code": True},
+    ),
+    "Snowflake/snowflake-arctic-embed-l-v2.0": ([0.33766, 0.70938, 0.553, 0.59806], {}),
+    "Snowflake/snowflake-arctic-embed-m": ([0.2949, 0.4604, 0.37613, 0.3753], {}),
+    "TencentBAC/Conan-embedding-v1": ([0.71863, 0.84665, 0.81194, 0.79829], {}),
+    "WhereIsAI/UAE-Large-V1": ([0.52088, 0.83056, 0.66972, 0.70268], {}),
+    "codefuse-ai/F2LLM-v2-0.6B-Preview": ([0.20657, 0.55304, 0.38951, 0.50517], {}),
+    "cointegrated/rubert-tiny2": ([0.709, 0.8222, 0.74461, 0.80378], {}),
+    **(
+        {}
+        if IS_TRANSFORMERS_V5
+        else {
+            "dangvantuan/vietnamese-document-embedding": (
+                [0.43283, 0.87257, 0.62018, 0.50188],
+                {"trust_remote_code": True},
+            ),
+        }
+    ),
+    "google/embeddinggemma-300m": ([0.30141, 0.63614, 0.4938, 0.48726], {}),
+    "ibm-granite/granite-embedding-english-r2": ([0.79434, 0.92277, 0.87005, 0.90737], {}),
+    "ibm-granite/granite-embedding-small-english-r2": ([0.8029, 0.92558, 0.88945, 0.88777], {}),
+    "intfloat/e5-base-v2": ([0.79746, 0.90085, 0.84888, 0.86544], {}),
+    "intfloat/e5-large-v2": ([0.77316, 0.85875, 0.83273, 0.84018], {}),
+    "intfloat/e5-small-v2": ([0.8147, 0.91502, 0.86984, 0.87874], {}),
+    "intfloat/multilingual-e5-base": ([0.79167, 0.87705, 0.85579, 0.86696], {}),
+    "intfloat/multilingual-e5-large": ([0.76818, 0.87194, 0.82893, 0.83167], {}),
+    "intfloat/multilingual-e5-large-instruct": ([0.7986, 0.89885, 0.85662, 0.8542], {}),
+    "intfloat/multilingual-e5-small": ([0.81157, 0.90596, 0.87089, 0.85667], {}),
+    "jhgan/ko-sroberta-multitask": ([0.37021, 0.5597, 0.47489, 0.60957], {}),
+    **(
+        {}
+        if IS_TRANSFORMERS_V5
+        else {
+            "jinaai/jina-clip-v2": ([0.40713, 0.7679, 0.67158, 0.65986], {"trust_remote_code": True, **_BF16_EAGER}),
+            "jinaai/jina-embeddings-v2-base-de": (
+                [0.3855, 0.76282, 0.68416, 0.6388],
+                {"trust_remote_code": True, **_BF16_EAGER},
+            ),
+            "jinaai/jina-embeddings-v2-small-en": (
+                [0.76057, 0.91291, 0.88755, 0.85267],
+                {"trust_remote_code": True, **_BF16_EAGER},
+            ),
+        }
+    ),
+    **(
+        {
+            "jinaai/jina-embeddings-v5-text-nano-retrieval": (
+                [0.50306, 0.79173, 0.61259, 0.57484],
+                {"trust_remote_code": True},
+            ),
+            "jinaai/jina-embeddings-v5-text-small-retrieval": ([0.486, 0.76114, 0.5914, 0.6188], {}),
+        }
+        if IS_TRANSFORMERS_V5
+        else {}
+    ),
+    "krlvi/sentence-msmarco-bert-base-dot-v5-nlpl-code_search_net": ([0.45588, 0.82425, 0.73622, 0.69947], {}),
+    "lightonai/modernbert-embed-large": ([0.7193, 0.88344, 0.79344, 0.84227], {}),
+    "minishlab/potion-base-8M": ([0.44635, 0.69271, 0.69851, 0.61344], {}),
+    "minishlab/potion-multilingual-128M": ([0.36266, 0.6547, 0.69237, 0.71587], {}),
+    "mixedbread-ai/mxbai-embed-large-v1": ([0.5803, 0.81596, 0.72407, 0.73394], {}),
+    "nomic-ai/modernbert-embed-base": ([0.66362, 0.84367, 0.7503, 0.79034], {}),
+    "nomic-ai/nomic-embed-text-v1": ([0.52828, 0.83103, 0.69433, 0.74755], {"trust_remote_code": True}),
+    "nomic-ai/nomic-embed-text-v1.5": ([0.65182, 0.88804, 0.79979, 0.81292], {"trust_remote_code": True}),
+    "nomic-ai/nomic-embed-text-v2-moe": ([0.32802, 0.75375, 0.59861, 0.69786], {"trust_remote_code": True}),
+    "perplexity-ai/pplx-embed-v1-0.6b": ([0.3611, 0.78193, 0.56681, 0.63235], {"trust_remote_code": True}),
+    "pritamdeka/S-PubMedBert-MS-MARCO": ([0.88224, 0.95009, 0.90964, 0.91386], {}),
+    "sentence-transformers-testing/stsb-bert-tiny-safetensors": ([0.58986, 0.6606, 0.68427, 0.70973], {}),
+    "sentence-transformers/LaBSE": ([0.34011, 0.63672, 0.42583, 0.51429], {}),
+    "sentence-transformers/all-MiniLM-L12-v2": ([0.44749, 0.73766, 0.6747, 0.63144], {}),
+    "sentence-transformers/all-MiniLM-L6-v2": ([0.46371, 0.81205, 0.72828, 0.75051], {}),
+    "sentence-transformers/all-mpnet-base-v2": ([0.46649, 0.77837, 0.69281, 0.70254], _BF16_EAGER),
+    "sentence-transformers/all-roberta-large-v1": ([0.44221, 0.79536, 0.70078, 0.67739], {}),
+    "sentence-transformers/distilbert-base-nli-mean-tokens": ([0.28404, 0.77148, 0.57352, 0.66649], {}),
+    "sentence-transformers/distiluse-base-multilingual-cased-v1": ([0.41009, 0.61811, 0.61323, 0.54668], {}),
+    "sentence-transformers/distiluse-base-multilingual-cased-v2": ([0.41124, 0.6519, 0.59922, 0.59494], {}),
+    "sentence-transformers/msmarco-MiniLM-L12-cos-v5": ([0.44815, 0.72011, 0.51215, 0.49126], {}),
+    "sentence-transformers/msmarco-MiniLM-L6-v3": ([0.41253, 0.7328, 0.5734, 0.60316], {}),
+    "sentence-transformers/msmarco-bert-base-dot-v5": ([163.80684, 173.32433, 169.95215, 170.04013], {}),
+    "sentence-transformers/multi-qa-MiniLM-L6-cos-v1": ([0.45806, 0.76797, 0.72787, 0.70697], {}),
+    "sentence-transformers/multi-qa-mpnet-base-dot-v1": ([18.6717, 25.32625, 24.20823, 23.68186], _BF16_EAGER),
+    "sentence-transformers/paraphrase-MiniLM-L3-v2": ([0.42338, 0.65843, 0.63398, 0.58664], {}),
+    "sentence-transformers/paraphrase-MiniLM-L6-v2": ([0.41505, 0.64242, 0.67241, 0.62624], {}),
+    "sentence-transformers/paraphrase-mpnet-base-v2": ([0.37404, 0.72485, 0.65526, 0.59607], _BF16_EAGER),
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": ([0.45345, 0.72518, 0.63576, 0.66493], {}),
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2": ([0.39164, 0.7398, 0.70213, 0.61799], {}),
+    "sentence-transformers/static-retrieval-mrl-en-v1": ([0.27474, 0.72625, 0.61197, 0.65317], {}),
+    "sentence-transformers/static-similarity-mrl-multilingual-v1": ([0.27946, 0.65648, 0.51909, 0.5041], {}),
+    "sentence-transformers/stsb-roberta-base": ([0.17741, 0.56969, 0.55308, 0.3549], {}),
+    "sergeyzh/BERTA": ([0.31288, 0.73603, 0.59157, 0.53384], {}),
+    "shibing624/text2vec-base-chinese": ([0.4911, 0.75127, 0.71263, 0.73599], {}),
+    "snunlp/KR-SBERT-V40K-klueNLI-augSTS": ([0.69016, 0.83492, 0.793, 0.83021], {}),
+    "thenlper/gte-base": ([0.8318, 0.93046, 0.88728, 0.89532], {}),
+    "thenlper/gte-large": ([0.81096, 0.93641, 0.88447, 0.89547], {}),
+    "thenlper/gte-small": ([0.83932, 0.93129, 0.90819, 0.90333], {}),
 }
 
 
-@pytest.mark.parametrize("model_name, expected_score", MODELS_TO_SIMILARITIES.items())
-@pytest.mark.slow  # Also marked as slow to avoid running it with CI: results in too many requests/downloads to the Hugging Face Hub
-def test_pretrained_model(model_name: str, expected_score: list[float]) -> None:
-    model = SentenceTransformer(model_name, trust_remote_code=True, model_kwargs={"torch_dtype": torch.float32})
+@pytest.mark.parametrize("model_name, expected_config", MODELS_TO_SIMILARITIES_BF16_SDPA.items())
+@pytest.mark.slow
+def test_pretrained_model_bf16_sdpa(model_name: str, expected_config: tuple[list[float], dict[str, Any]]) -> None:
+    expected_score, kwargs_override = expected_config
+    kwargs = {"model_kwargs": {"torch_dtype": torch.bfloat16, "attn_implementation": "sdpa"}}
+    kwargs.update(kwargs_override)
+    model = SentenceTransformer(model_name, **kwargs)
     query_embedding = model.encode_query(QUERY)
     document_embeddings = model.encode_document(DOCUMENTS)
     similarities = model.similarity(query_embedding, document_embeddings)[0]
-    assert np.allclose(similarities, expected_score, atol=0.01), (
+    assert np.allclose(similarities, expected_score, rtol=0.01), (
         f"Expected similarity for {model_name} to be close to {expected_score}, but got {similarities}"
     )
     del model
