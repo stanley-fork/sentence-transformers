@@ -154,6 +154,34 @@ def test_predict_single_input(model_name: str):
         assert pair_score.shape == (model.num_labels,)
 
 
+def test_predict_batch_size_1(reranker_bert_tiny_model: CrossEncoder) -> None:
+    """Regression test: batch_size=1 with num_labels=1 used to fail because squeeze produced a 0-d tensor.
+
+    Some models (e.g. jinaai/jina-reranker-m0) return scores with shape [batch_size] instead of [batch_size, 1].
+    With batch_size=1, squeeze(-1) would collapse [1] to a 0-d scalar, causing .extend() to fail.
+    We mock forward to reproduce this by stripping the trailing dimension.
+    """
+    model = reranker_bert_tiny_model
+    pairs = [
+        ["A man is eating pasta.", "A man is eating food."],
+        ["The girl is carrying a baby.", "A man is riding a horse."],
+    ]
+
+    original_forward = model.forward
+
+    def forward_without_trailing_dim(features, **kwargs):
+        out = original_forward(features, **kwargs)
+        # Simulate models that return [batch_size] instead of [batch_size, 1]
+        out["scores"] = out["scores"].squeeze(-1)
+        return out
+
+    model.forward = forward_without_trailing_dim
+
+    scores = model.predict(pairs, batch_size=1)
+    assert isinstance(scores, np.ndarray)
+    assert scores.shape == (2,)
+
+
 @pytest.mark.parametrize("convert_to_numpy", [True, False])
 @pytest.mark.parametrize("convert_to_tensor", [True, False])
 def test_empty_predict(reranker_bert_tiny_model: CrossEncoder, convert_to_numpy: bool, convert_to_tensor: bool):
